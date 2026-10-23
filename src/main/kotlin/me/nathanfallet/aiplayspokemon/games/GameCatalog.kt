@@ -177,10 +177,17 @@ object GameCatalog {
 
     /** The profile to use for a ROM: its own, or [generic] when the catalog does not know it. */
     fun detect(romBytes: ByteArray, dataDirectory: Path? = null): GameProfile =
-        find(header(romBytes).gameCode, dataDirectory) ?: generic
+        detect(header(romBytes), dataDirectory)
+
+    /** The profile to use for an already-read [header] (what [scan] uses: it never reads a whole ROM). */
+    fun detect(header: RomHeader, dataDirectory: Path? = null): GameProfile =
+        find(header.gameCode, dataDirectory) ?: generic
 
     /** A ROM's declared identity, used to match it against the catalog. */
     data class RomHeader(val title: String, val gameCode: String)
+
+    /** Reads only the ROM header of [path] (16 bytes), not the whole game. */
+    fun headerOf(path: Path): RomHeader = header(Files.newInputStream(path).use { it.readNBytes(HEADER_BYTES) })
 
     /** The title (`0x00`, 12 bytes) and game code (`0x0C`, 4 bytes) a ROM declares in its header. */
     fun header(romBytes: ByteArray): RomHeader {
@@ -199,7 +206,7 @@ object GameCatalog {
         if (!Files.isDirectory(directory)) return emptyList()
         return Files.list(directory).use { stream ->
             stream.filter { it.isRegularFile() && it.extension.equals("nds", ignoreCase = true) }
-                .map { path -> DetectedRom(path, detect(path.readBytes(), dataDirectory)) }
+                .map { path -> DetectedRom(path, detect(headerOf(path), dataDirectory)) }
                 .sorted(compareBy({ it.profile.title }, { it.path.fileName.toString() }))
                 .toList()
         }
@@ -222,5 +229,8 @@ object GameCatalog {
     }
 
     private const val GAMES_FILE = "games.json"
+
+    /** The header is 16 bytes: a 12-byte title at `0x00` and a 4-byte game code at `0x0C`. */
+    private const val HEADER_BYTES = 16
 
 }

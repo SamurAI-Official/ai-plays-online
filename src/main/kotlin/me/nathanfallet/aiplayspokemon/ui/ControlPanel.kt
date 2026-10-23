@@ -290,7 +290,9 @@ private fun LlmSelector(controller: AppController) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     Text("Installed Ollama models", style = MaterialTheme.typography.labelSmall)
                     LazyColumn(
-                        modifier = Modifier.height(150.dp).verticalScroll(rememberScrollState()),
+                        // A LazyColumn scrolls itself: adding verticalScroll here would measure it with an
+                        // infinite maximum height, which Compose refuses (it crashed the panel with an LLM).
+                        modifier = Modifier.height(150.dp),
                     ) {
                         items(items = models, key = { it }) { m ->
                             TextButton(

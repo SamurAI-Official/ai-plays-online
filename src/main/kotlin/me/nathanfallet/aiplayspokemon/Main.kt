@@ -3,6 +3,7 @@ package me.nathanfallet.aiplayspokemon
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
 import kotlin.io.path.readBytes
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,18 +44,23 @@ fun main(args: Array<String>) {
 
     application {
         val scope = rememberCoroutineScope()
-        // No game until one is picked: the app opens on the game picker (a ROM on the command line or in the ROM
-        // environment variable is the only one it starts by itself).
-        var romPath by remember { mutableStateOf(config.romPath) }
-        // A core instance belongs to one ROM: picking another game closes this one and opens that one.
-        val session = remember(romPath) { romPath?.let { OpenGame.open(config, it, scope) } }
+        // The open game, created once per choice. It is deliberately *not* built inside a remember() calculation:
+        // Compose may re-run those, and a second ConsoleHost means a second pair of emulator cores in this process
+        // (which crashed the core natively when it happened).
+        var session by remember { mutableStateOf<OpenGame?>(null) }
+        var romPath by remember { mutableStateOf<Path?>(null) }
         val windowState = rememberWindowState(size = DpSize(1068.dp, 840.dp))
 
         fun switchTo(path: Path?) {
+            println("ai-plays-online: ${path?.fileName ?: "no game (picker)"}")
             session?.close()
             path?.let(config::saveRomPath)
             romPath = path
+            session = path?.let { OpenGame.open(config, it, scope) }
         }
+
+        // A ROM on the command line (or in the ROM environment variable) is the only one opened without a click.
+        LaunchedEffect(Unit) { config.romPath?.let(::switchTo) }
 
         Window(
             onCloseRequest = {
@@ -66,7 +72,8 @@ fun main(args: Array<String>) {
             onKeyEvent = { event -> session?.controller?.onKeyEvent(event) ?: false },
         ) {
             val open = session
-            if (open == null) {
+            val rom = romPath
+            if (open == null || rom == null) {
                 GamePickerScreen(config, onPick = ::switchTo, onBrowse = { chooseRom() })
             } else {
                 // Focus loss while a key is held: its release never arrives (it goes to the other app), which would
@@ -81,8 +88,8 @@ fun main(args: Array<String>) {
                 App(
                     controller = open.controller,
                     window = windowState,
-                    currentRom = romPath ?: return@Window,
-                    games = GameCatalog.scan(config.romsDirectory, config.dataDirectory),
+                    currentRom = rom,
+                    games = remember(rom) { GameCatalog.scan(config.romsDirectory, config.dataDirectory) },
                     onSelectGame = { path -> switchTo(path) },
                     onBrowse = { chooseRom()?.let(::switchTo) },
                     onChangeGame = { switchTo(null) },
@@ -116,6 +123,7 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
             // What the app knows about this ROM: its own profile, or the generic one (screen only).
             val profile = GameCatalog.detect(bytes, config.dataDirectory)
             val game = PokemonGames.detect(bytes)
+            println("ai-plays-online: ${profile.title} (${profile.agent}) on ${emulator.info.name}")
             if (config.startMuted) emulator.setMuted(true)
             config.startState?.let { slot -> runBlocking { check(emulator.loadState(slot)) { "No save state in slot $slot" } } }
             emulator.start()

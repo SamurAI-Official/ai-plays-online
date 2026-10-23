@@ -23,7 +23,6 @@ import me.nathanfallet.aiplayspokemon.games.AgentKind
 import me.nathanfallet.aiplayspokemon.games.DetectedRom
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.WalkthroughCatalog
-import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -100,7 +99,8 @@ fun GamePickerScreen(config: AppConfig, onPick: (Path) -> Unit, onBrowse: () -> 
 
 /** The profile of a ROM outside the ROMs folder (the last played one, which may have moved). */
 private fun profileOf(rom: Path, config: AppConfig) =
-    runCatching { GameCatalog.detect(Files.readAllBytes(rom), config.dataDirectory) }.getOrDefault(GameCatalog.generic)
+    runCatching { GameCatalog.detect(GameCatalog.headerOf(rom), config.dataDirectory) }
+        .getOrDefault(GameCatalog.generic)
 
 /** One game in the list: what it is, what the AI would get, and how to open it. */
 @Composable
