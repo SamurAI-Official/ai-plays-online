@@ -43,7 +43,10 @@ ROM that you dumped yourself** (no ROM is provided — see [Tested games](#teste
 
 1. Build the app (or take the jar from a release of this repository). The same jar runs on macOS, Linux and Windows
    (x86-64 and Apple Silicon).
-2. Run it, with the path to your ROM (or without it: the app asks for the ROM with a file picker and remembers it):
+2. Run it. **The app opens on the game picker**: it lists the ROMs in your ROMs folder
+   (`~/.ai-plays-online/roms` by default), each with what we know about it, and **Browse…** opens one from anywhere.
+   Nothing is loaded until you pick — the app never starts a game by itself. To skip the picker, name a ROM on the
+   command line (or in `AI_PLAYS_ONLINE_ROM`):
 
    ```bash
    java -jar ai-plays-online-<version>-universal.jar "/path/to/your game.nds"
@@ -59,6 +62,16 @@ ROM that you dumped yourself** (no ROM is provided — see [Tested games](#teste
       (streamable HTTP);
     - **an LLM or Jev from the app**: choose it in the panel on the right, paste its API key if needed, and click
       **▶ Let … play**.
+
+## Building and running
+
+```bash
+./gradlew build          # compiles + 154 tests
+./gradlew startApp       # runs the app (the picker: no game is loaded until you choose one)
+./gradlew packageUberJarForCurrentOS -Puniversal   # the jar that runs on every platform
+```
+
+A ROM on the command line (`./gradlew startApp -PappArgs="/path/to/game.nds"`) opens that game directly.
 
 ## Tested games
 
@@ -142,9 +155,9 @@ reasoning and note.
 **The game picker** (top of the panel) lists the ROMs in the ROMs folder (`~/.ai-plays-online/roms` by default,
 `AI_PLAYS_ONLINE_ROMS_DIR` to point elsewhere) and shows, for each one, whether the AI gets the game's state
 (*typed agent*) or only the screen, plus what we verified for that title. Picking another game saves the current one,
-closes its console and opens the chosen ROM; **Browse…** takes any `.nds` file. Each game's prompt (objective and
-conventions) lives in its profile, and you can override any profile — or add your own game — in
-`~/.ai-plays-online/games.json`; see [`docs/games.md`](docs/games.md).
+closes its console and opens the chosen ROM; **Browse…** takes any `.nds` file, and **Choose another game…** goes back
+to the startup picker. Each game's prompt (objective and conventions) lives in its profile, and you can override any
+profile — or add your own game — in `~/.ai-plays-online/games.json`; see [`docs/games.md`](docs/games.md).
 
 **The walkthrough** (below it) is what the run is working on: the current chapter's goal and hints, a dropdown to pin
 another chapter, and **Follow progress** — on, the app advances the chapter by itself (from the game's own verified
@@ -189,7 +202,7 @@ core, in-game saves and save states). Environment variables take precedence:
 
 | Environment variable                                                          | Config key              | Default                                |
 |-------------------------------------------------------------------------------|-------------------------|----------------------------------------|
-| `AI_PLAYS_ONLINE_ROM` (or `POKEMON_ROM`, or first argument)                    | `rom`                   | asked with a file picker               |
+| `AI_PLAYS_ONLINE_ROM` (or `POKEMON_ROM`, or first argument)                    | `rom`                   | none: the game picker at startup        |
 | `DECISION_BACKEND` (`mcp` / `llm` / `jev`)                                    | `backend`               | `mcp`                                  |
 | `TYPESAFE_API_KEY`                                                            | `typesafe.apiKey`       | entered in the app                     |
 | `JEV_MODEL`                                                                   | `typesafe.model`        | `jev-latest`                           |

@@ -72,6 +72,7 @@ fun ControlPanel(
     games: List<DetectedRom>,
     onSelectGame: (Path) -> Unit,
     onBrowse: () -> Unit,
+    onChangeGame: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val player by controller.player.collectAsState()
@@ -81,7 +82,7 @@ fun ControlPanel(
 
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("AI plays Online", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        GameSelector(controller, currentRom, games, onSelectGame, onBrowse)
+        GameSelector(controller, currentRom, games, onSelectGame, onBrowse, onChangeGame)
         WalkthroughSection(controller)
         Text(
             "${controller.profile.shortTitle} · ${controller.emulator.info.name} · ${"%.0f".format(status.measuredFps)} fps",
@@ -698,6 +699,7 @@ private fun GameSelector(
     games: List<DetectedRom>,
     onSelectGame: (Path) -> Unit,
     onBrowse: () -> Unit,
+    onChangeGame: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val profile = controller.profile
@@ -734,6 +736,10 @@ private fun GameSelector(
                         )
                     }
                     DropdownMenuItem(text = { Text("Browse…") }, onClick = { expanded = false; onBrowse() })
+                    DropdownMenuItem(
+                        text = { Text("Choose another game…") },
+                        onClick = { expanded = false; onChangeGame() },
+                    )
                 }
             }
             Text(

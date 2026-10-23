@@ -21,6 +21,7 @@ import dev.kotlinds.pokemonclient.PokemonGames
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.ui.App
 import me.nathanfallet.aiplayspokemon.ui.AppController
+import me.nathanfallet.aiplayspokemon.ui.GamePickerScreen
 import kotlinx.coroutines.CoroutineScope
 import java.awt.FileDialog
 import java.awt.Frame
@@ -39,48 +40,54 @@ import java.nio.file.Path
  */
 fun main(args: Array<String>) {
     val config = AppConfig.load(args)
-    val rom = config.romPath ?: chooseRom()?.also(config::saveRomPath) ?: return
 
     application {
         val scope = rememberCoroutineScope()
-        var romPath by remember { mutableStateOf(rom) }
+        // No game until one is picked: the app opens on the game picker (a ROM on the command line or in the ROM
+        // environment variable is the only one it starts by itself).
+        var romPath by remember { mutableStateOf(config.romPath) }
         // A core instance belongs to one ROM: picking another game closes this one and opens that one.
-        val session = remember(romPath) { OpenGame.open(config, romPath, scope) }
-        val games = remember(romPath) { GameCatalog.scan(config.romsDirectory, config.dataDirectory) }
+        val session = remember(romPath) { romPath?.let { OpenGame.open(config, it, scope) } }
         val windowState = rememberWindowState(size = DpSize(1068.dp, 840.dp))
 
-        fun switchTo(path: Path) {
-            session.close()
-            config.saveRomPath(path)
+        fun switchTo(path: Path?) {
+            session?.close()
+            path?.let(config::saveRomPath)
             romPath = path
         }
 
         Window(
             onCloseRequest = {
-                session.close() // unloads the game, which writes the in-game save to disk
+                session?.close() // unloads the game, which writes the in-game save to disk
                 exitApplication()
             },
             title = "AI plays Online",
             state = windowState,
-            onKeyEvent = session.controller::onKeyEvent,
+            onKeyEvent = { event -> session?.controller?.onKeyEvent(event) ?: false },
         ) {
-            // Focus loss while a key is held: its release never arrives (it goes to the other app), which would keep
-            // the button pressed forever — and a held key keeps every agent action refused as "human driving".
-            DisposableEffect(window) {
-                val listener = object : WindowAdapter() {
-                    override fun windowLostFocus(event: WindowEvent) = session.controller.onFocusLost()
+            val open = session
+            if (open == null) {
+                GamePickerScreen(config, onPick = ::switchTo, onBrowse = { chooseRom() })
+            } else {
+                // Focus loss while a key is held: its release never arrives (it goes to the other app), which would
+                // keep the button pressed forever — and a held key keeps every agent action refused as "human driving".
+                DisposableEffect(window) {
+                    val listener = object : WindowAdapter() {
+                        override fun windowLostFocus(event: WindowEvent) = open.controller.onFocusLost()
+                    }
+                    window.addWindowFocusListener(listener)
+                    onDispose { window.removeWindowFocusListener(listener) }
                 }
-                window.addWindowFocusListener(listener)
-                onDispose { window.removeWindowFocusListener(listener) }
+                App(
+                    controller = open.controller,
+                    window = windowState,
+                    currentRom = romPath ?: return@Window,
+                    games = GameCatalog.scan(config.romsDirectory, config.dataDirectory),
+                    onSelectGame = { path -> switchTo(path) },
+                    onBrowse = { chooseRom()?.let(::switchTo) },
+                    onChangeGame = { switchTo(null) },
+                )
             }
-            App(
-                controller = session.controller,
-                window = windowState,
-                currentRom = romPath,
-                games = games,
-                onSelectGame = ::switchTo,
-                onBrowse = { chooseRom()?.let(::switchTo) },
-            )
         }
     }
 }

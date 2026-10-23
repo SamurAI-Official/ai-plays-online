@@ -62,6 +62,24 @@ class GameCatalogTest {
     }
 
     @Test
+    fun scanFindsTheRomsOfThePickerAndIgnoresTheRest() {
+        val directory = Files.createTempDirectory("ai-plays-online-roms")
+        Files.write(directory.resolve("mario.nds"), rom("MARIOKARTDS", "AMCE"))
+        Files.write(directory.resolve("notes.txt"), "not a rom".encodeToByteArray())
+        Files.createDirectories(directory.resolve("subdir.nds"))
+
+        val found = GameCatalog.scan(directory)
+        assertEquals(1, found.size, "only .nds files are games")
+        assertEquals("mario-kart-ds", found.single().profile.id)
+        assertEquals(directory.resolve("mario.nds"), found.single().path)
+    }
+
+    @Test
+    fun scanOfAMissingFolderIsEmptyNotAnError() {
+        assertEquals(emptyList(), GameCatalog.scan(java.nio.file.Path.of("/nowhere/roms")))
+    }
+
+    @Test
     fun userProfilesOverrideTheBuiltIns() {
         val dataDirectory = Files.createTempDirectory("ai-plays-online-games")
         Files.writeString(

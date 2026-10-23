@@ -46,6 +46,8 @@ fun App(
     onSelectGame: (Path) -> Unit,
     /** Asks for a ROM with the native file picker. */
     onBrowse: () -> Unit,
+    /** Closes the game and goes back to the game picker. */
+    onChangeGame: () -> Unit,
 ) {
     var collapsed by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme()) {
@@ -73,6 +75,7 @@ fun App(
                         games,
                         onSelectGame,
                         onBrowse,
+                        onChangeGame,
                         Modifier.width(PANEL_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()),
                     )
                 }

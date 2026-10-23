@@ -42,6 +42,10 @@ import kotlin.io.path.outputStream
 class AppConfig(
     val dataDirectory: Path,
     private val properties: Properties,
+    /**
+     * The ROM asked for on the command line or through the ROM environment variable: the only one the app starts
+     * by itself. Null means "show the game picker".
+     */
     val romPath: Path?,
 ) {
     private val configFile get() = dataDirectory.resolve(CONFIG_FILE)
@@ -129,6 +133,13 @@ class AppConfig(
     fun saveRomPath(path: Path) = save("rom", path.toAbsolutePath().toString())
 
     /**
+     * The ROM played last time, offered by the game picker (never loaded by itself): null when there is none, or
+     * when the file has moved away.
+     */
+    val rememberedRomPath: Path?
+        get() = properties.getProperty("rom")?.let(Path::of)?.takeIf { it.exists() }
+
+    /**
      * Where the game picker looks for ROMs. Defaults to `<data>/roms`; set `AI_PLAYS_ONLINE_ROMS_DIR`
      * (or the `roms.dir` config key) to point at a folder you already keep them in.
      */
@@ -167,10 +178,11 @@ class AppConfig(
             val properties = Properties()
             dataDirectory.resolve(CONFIG_FILE).takeIf { it.exists() }?.inputStream()?.use(properties::load)
 
+            // Only an explicit request starts a game by itself (the command line, or the ROM environment
+            // variable): the remembered one is offered by the game picker, never loaded behind the user's back.
             val rom = args.firstOrNull()
                 ?: System.getenv("AI_PLAYS_ONLINE_ROM")
                 ?: System.getenv("POKEMON_ROM")
-                ?: properties.getProperty("rom")
             return AppConfig(dataDirectory, properties, rom?.let(Path::of)?.takeIf { it.exists() })
         }
     }
