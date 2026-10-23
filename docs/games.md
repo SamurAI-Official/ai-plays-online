@@ -29,25 +29,57 @@ use the same build.
 
 ## Results
 
-Filled in as we run them; `—` means not run yet. Measured on macOS (Apple Silicon), melonDS 0.9.3
-(`47b32511…`/`99e84ea1…`) and DeSmuME from libretro `master`.
+Measured on macOS (Apple Silicon), 300 warmup frames then 600 frames with a save/load per frame, main RAM hashed
+(`--hash-ram`), melonDS 0.9.3 (`99e84ea1…`) and DeSmuME from libretro `master`, both with our RTC patch applied.
 
-| Game | Core | Boots | Determinism (600 frames) | State size | Save / load | Local wireless |
+| Game | Core | State size | Save | Load | Determinism (600 frames) | Rollback |
 |---|---|---|---|---|---|---|
-| Pokémon HeartGold (USA) | melonDS (patched) | yes | OK (1,000 frames, per-frame save/load) | ~6.7 MiB | ~3.1 ms / 0.0 ms | no multiplayer screen reached |
-| Pokémon HeartGold (USA) | DeSmuME (patched) | yes | OK (1,000 frames) | ~11.7 MiB | ~2.8 ms / 0.0 ms | n/a (core has no Wi-Fi) |
-| Pokémon Platinum (USA) | melonDS (patched) | yes | — | — | — | — |
-| Pokémon Platinum (USA) | DeSmuME (patched) | yes | — | — | — | — |
-| Mario Kart DS (USA) | melonDS (patched) | — | — | — | — | — |
-| Mario Kart DS (USA) | DeSmuME (patched) | — | — | — | — | — |
-| Final Fantasy III (USA) | melonDS (patched) | — | — | — | — | n/a |
-| Final Fantasy III (USA) | DeSmuME (patched) | — | — | — | — | n/a |
-| Final Fantasy IV (USA) | melonDS (patched) | — | — | — | — | n/a |
-| Final Fantasy IV (USA) | DeSmuME (patched) | — | — | — | — | n/a |
-| Phantasy Star 0 (USA) | melonDS (patched) | — | — | — | — | — |
-| Phantasy Star 0 (USA) | DeSmuME (patched) | — | — | — | — | — |
-| Age of Empires: The Age of Kings (USA) | melonDS (patched) | — | — | — | — | — |
-| Age of Empires: The Age of Kings (USA) | DeSmuME (patched) | — | — | — | — | — |
+| Age of Empires: The Age of Kings (USA) | melonDS | 6.2 MiB | 2.88 ms | 3.56 ms | OK | yes |
+| Age of Empires: The Age of Kings (USA) | DeSmuME | 12.0 MiB | 2.92 ms | 13.8 ms | OK | yes |
+| Final Fantasy III (USA) | melonDS | 6.3 MiB | 3.32 ms | 3.99 ms | **FAILED at frame 0** | lockstep only |
+| Final Fantasy III (USA) | DeSmuME | 12.0 MiB | 3.79 ms | 8.07 ms | OK | yes |
+| Final Fantasy IV (USA) | melonDS | 6.3 MiB | 2.85 ms | 3.58 ms | OK | yes |
+| Final Fantasy IV (USA) | DeSmuME | 12.0 MiB | 3.25 ms | 6.07 ms | OK | yes |
+| Mario Kart DS (USA) | melonDS | 6.5 MiB | 4.04 ms | 4.57 ms | **FAILED at frame 0** | lockstep only |
+| Mario Kart DS (USA) | DeSmuME | 12.0 MiB | 2.90 ms | 9.17 ms | OK | yes |
+| Phantasy Star 0 (USA) | melonDS | 6.3 MiB | 3.45 ms | 4.46 ms | OK | yes |
+| Phantasy Star 0 (USA) | DeSmuME | 12.0 MiB | 2.48 ms | 9.76 ms | OK | yes |
+| Pokémon HeartGold (USA) | melonDS | 6.7 MiB | 6.26 ms | 4.85 ms | OK | yes |
+| Pokémon HeartGold (USA) | DeSmuME | 12.0 MiB | 3.69 ms | 8.99 ms | OK | yes |
+| Pokémon Platinum (USA) | melonDS | 6.7 MiB | 2.97 ms | 3.85 ms | OK | yes |
+| Pokémon Platinum (USA) | DeSmuME | 12.0 MiB | 3.13 ms | 12.7 ms | OK | yes |
+
+What the numbers say:
+
+- **All seven titles boot and run on both cores** (600 frames each, video and audio produced).
+- **12 of 14 core/game combinations are rollback-safe** after the fixed-RTC patch.
+- **Final Fantasy III and Mario Kart DS fail at frame 0 on melonDS**: main RAM differs immediately after a
+  save/load, which means melonDS's savestate does not capture something these two touch at boot (they pass on
+  DeSmuME). Use DeSmuME for them, or run them in lockstep (`Mode.LOCKSTEP`, `--mode lockstep`), which never
+  restores a state. Finding the missing field would be a melonDS patch of its own.
+- **DeSmuME states are ~12 MiB (the full `retro_serialize_size`) and load slower** (6–14 ms vs 3–5 ms on melonDS),
+  which is what a rollback pays per rewind. melonDS states are ~6.5 MiB because the core reports its real length.
+- **Local wireless was not reached by the scripted inputs on any title**, including Mario Kart DS (its menus are
+  touch-driven): `link-probe` reports `radio packets transmitted: 0`. It supports `--state`, so the way to close
+  this is a savestate taken inside a multiplayer screen (see below).
+
+## Local wireless: how to finish the check
+
+```bash
+# 1. Reach a local wireless screen in the app (e.g. Mario Kart DS: multiplayer, or Pokémon's Union Room),
+#    save a state there (F1 in the app writes slot 1), then copy it out of the data directory.
+# 2. Run the probe on that state: it should now report packets.
+./gradlew :demo:run --args="link-probe --core ~/.ai-plays-online/cores/melonds_libretro.dylib \
+  --rom '/path/to/your game.nds' --state /path/to/wireless.state --frames 1800"
+# 3. Then the real thing: two peers, one console each.
+./gradlew :demo:run --args="host --core ~/.ai-plays-online/cores/melonds_libretro.dylib \
+  --rom '/path/to/your game.nds' --state /path/to/wireless.state --link --peer 127.0.0.1:7001"
+./gradlew :demo:run --args="join --core ~/.ai-plays-online/cores/melonds_libretro.dylib \
+  --rom '/path/to/your game.nds' --state /path/to/wireless.state --link --peer 127.0.0.1:7000"
+```
+
+The ABI itself is already proven without any game content: the patched core's `t6_link_selftest()` round-trips a
+probe through its own radio routing, and `LibretroLinkIntegrationTest` asserts it.
 
 ## Game profiles
 

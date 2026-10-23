@@ -62,24 +62,28 @@ ROM that you dumped yourself** (no ROM is provided — see [Tested games](#teste
 
 ## Tested games
 
-We run each title ourselves and record what works. "Typed agent" means the AI gets the game's state read from RAM
-(pokemon-client readers, the fullest support); "playable" means the game runs, the human can play and the emulator is
-measured for rollback, but the AI only has the screen. A ROM you bring is identified by its header, so a different
-region or revision of the same game still works but may not be tested.
+We run every title ourselves and record what works. "Typed agent" means the AI gets the game's state read from RAM
+(pokemon-client readers, the fullest support); "screen only" means the game runs, the human can play, and the emulator
+is measured, but the AI would only have the screen. A ROM is identified by its header, so another region or revision
+of the same game still works (and may be untested).
 
-| Game                                | Region | ROM code | Typed agent | Rollback-safe core | Verified |
-|-------------------------------------|--------|----------|-------------|--------------------|----------|
-| Pokémon HeartGold                   | USA    | `IPKE`   | yes         | melonDS + DeSmuME (patched RTC) | 1,000-frame determinism, 300-frame two-process rollback, 1/3 packet loss |
-| Pokémon Platinum                    | USA    | `CPUE`   | yes         | melonDS + DeSmuME (patched RTC) | reader + boot check |
-| Mario Kart DS                       | USA    | `AMCE`   | no          | measured per build  | boot check, local wireless probe |
-| Final Fantasy III                   | USA    | `AFFE`   | no          | measured per build  | boot check |
-| Final Fantasy IV                    | USA    | `AFFE`/`YF4E` | no      | measured per build  | boot check |
-| Phantasy Star 0                     | USA    | `C2SE`   | no          | measured per build  | boot check |
-| Age of Empires: The Age of Kings    | USA    | `AE2E`   | no          | measured per build  | boot check |
+| Game | ROM code | Agent | Rollback-safe | Verified |
+|---|---|---|---|---|
+| Pokémon HeartGold | `IPKE` | typed | melonDS ✅ / DeSmuME ✅ | 1,000-frame determinism, 300-frame two-process rollback with 1/3 packet loss, delta snapshots |
+| Pokémon Platinum | `CPUE` | typed | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Mario Kart DS | `AMCE` | screen only | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
+| Final Fantasy III | `AFFE` | screen only | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
+| Final Fantasy IV | `YF4E` | screen only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Phantasy Star 0 | `C2SE` | screen only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Age of Empires: The Age of Kings | `AE2E` | screen only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
 
-Rows are filled by running the engine's probes (determinism, save/load cost, local wireless) on each title with both
-patched cores; see [`docs/games.md`](docs/games.md) for the raw numbers and how to add a row. Other DS games run too:
-the app treats a ROM it doesn't know as play-only.
+All seven boot and run on both patched cores; 12 of the 14 game/core combinations pass a 600-frame save/load
+determinism check (the two that do not are melonDS's, and only for those two titles). The raw numbers — state size,
+save/load cost, what the local-wireless probe found — are in [`docs/games.md`](docs/games.md), along with the exact
+commands that produced them. Local wireless is measured but not yet reached by scripted inputs on any title: that
+needs a savestate taken inside a multiplayer screen (procedure in the same document).
+
+Other DS games run too: an unknown ROM gets the generic profile, which is playable with the human in control.
 
 ## Running from source
 
@@ -135,6 +139,13 @@ if needed, pick the mode and options, and **▶ Let … play** starts the autono
 receives ("What the AI sees" → Show JSON), and for each decision Jev's probability for every option, or the LLM's
 reasoning and note.
 
+**The game picker** (top of the panel) lists the ROMs in the ROMs folder (`~/.ai-plays-online/roms` by default,
+`AI_PLAYS_ONLINE_ROMS_DIR` to point elsewhere) and shows, for each one, whether the AI gets the game's state
+(*typed agent*) or only the screen, plus what we verified for that title. Picking another game saves the current one,
+closes its console and opens the chosen ROM; **Browse…** takes any `.nds` file. Each game's prompt (objective and
+conventions) lives in its profile, and you can override any profile — or add your own game — in
+`~/.ai-plays-online/games.json`; see [`docs/games.md`](docs/games.md).
+
 **Claude without an API key**: choose LLM → *Claude (Claude Code login)* with a model like `sonnet` or `opus`. Each
 decision runs `claude -p` (a few seconds of overhead) and counts towards your Claude plan's usage.
 
@@ -185,6 +196,7 @@ core, in-game saves and save states). Environment variables take precedence:
 | `START_MUTED`                                                                 | `start.muted`           | `false`                                |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`                   | `llm.<provider>.apiKey` | entered in the app                     |
 | `AI_PLAYS_ONLINE_DATA_DIR`                                                    | —                       | `~/.ai-plays-online`                   |
+| `AI_PLAYS_ONLINE_ROMS_DIR`                                                    | `roms.dir`              | `<data>/roms` (the game picker's list) |
 
 **Jev without the cloud.** Jev itself is only served by TypeSafe (no public weights). `JEV_ENDPOINT` can point to any
 server implementing the same `POST /v1/systemone` protocol, e.g. an open-weight reproduction of Jev served locally.
