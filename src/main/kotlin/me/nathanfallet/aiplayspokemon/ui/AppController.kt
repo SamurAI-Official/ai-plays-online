@@ -45,6 +45,8 @@ import me.nathanfallet.aiplayspokemon.decision.claudecode.ClaudeCodeDecisionMode
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmDecisionModel
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmProvider
 import me.nathanfallet.aiplayspokemon.decision.llm.OllamaModels
+import me.nathanfallet.aiplayspokemon.games.GameCatalog
+import me.nathanfallet.aiplayspokemon.games.GameProfile
 
 /**
  * Glue between the UI and the rest of the app: owns the [PokemonPlayer], turns keyboard events into
@@ -55,6 +57,8 @@ class AppController(
     val game: PokemonGame?,
     private val config: AppConfig,
     private val scope: CoroutineScope,
+    /** The profile of the ROM being played: names the game and carries its per-game prompt. */
+    val profile: GameProfile = GameCatalog.generic,
 ) {
     private val humanButtons = mutableSetOf<Button>()
 
@@ -335,6 +339,7 @@ class AppController(
                 scope = scope,
                 settings = { _settings.value },
                 runsDirectory = config.dataDirectory.resolve("runs"),
+                profile = profile,
                 narrator = { narrator() },
             )
         } else null

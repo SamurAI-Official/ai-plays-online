@@ -14,10 +14,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class DecisionPromptStoryTest {
+
+    /** The typed profile the story-goal assist belongs to. */
+    private val heartGold = GameCatalog.builtIns.first { it.id == "pokemon-heartgold" }
 
     private val overworld = Screen.Overworld(awaiting = Awaiting.INPUT)
 
@@ -35,7 +39,7 @@ class DecisionPromptStoryTest {
         memory.observeStory(StoryGoals.plan(gs))
         val turn = AgentSession.Turn(gs, buildJsonObject {}, emptyList())
         val settings = PlayerSettings(knowledge = KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)
-        val req = DecisionPrompt.build("obj", turn, memory, settings, generative = false, gameName = "Pokemon HeartGold (USA)")
+        val req = DecisionPrompt.build("obj", turn, memory, settings, generative = false, profile = heartGold)
         val mem = req.state["memory"]!!.jsonObject
         assertTrue(mem["story"]!!.jsonObject["goal"]!!.jsonPrimitive.content == "do a")
         assertTrue(req.instructions.contains("memory.story"))
@@ -48,7 +52,7 @@ class DecisionPromptStoryTest {
         val memory = AgentMemory()
         val turn = AgentSession.Turn(gs, buildJsonObject {}, emptyList())
         val settings = PlayerSettings(knowledge = KnowledgeLevel.POKEDEX)
-        val req = DecisionPrompt.build("obj", turn, memory, settings, generative = false, gameName = "Pokemon HeartGold (USA)")
+        val req = DecisionPrompt.build("obj", turn, memory, settings, generative = false, profile = heartGold)
         val mem = req.state["memory"]!!.jsonObject
         assertTrue(mem["story"] == null)
         assertTrue(!req.instructions.contains("memory.story"))

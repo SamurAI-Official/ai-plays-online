@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
+import me.nathanfallet.aiplayspokemon.games.GameProfile
 
 /**
  * The game as seen by our own AI player (LLM through Koog, Claude Code, Jev), on top of the [GameSession] shared
@@ -28,6 +29,8 @@ class AgentSession(
     private val game: PokemonGame,
     recorder: Recorder,
     val settings: () -> PlayerSettings,
+    /** The game's profile: what to aim for, and how this game behaves (the per-game prompt). */
+    val profile: GameProfile,
 ) {
     val gameSession = GameSession(host, game, recorder, options = { settings().agentOptions })
     val memory = AgentMemory()
@@ -38,7 +41,7 @@ class AgentSession(
 
     /** What the player is trying to achieve; editable at any time. */
     @Volatile
-    var objective: String = DecisionPrompt.defaultObjective(game.name)
+    var objective: String = profile.objective
 
     /** Goal written by the planner in hybrid mode, shown to the fast decider. */
     @Volatile
@@ -100,7 +103,7 @@ class AgentSession(
         generative = generative,
         plannerGoal = plannerGoal.takeIf { settings().mode == ControlMode.HYBRID && !planner },
         planner = planner,
-        gameName = game.name,
+        profile = profile,
         previousMovementFailure = lastMovementFailure?.let { failure ->
             lastMovementFailure = null
             failure.takeIf { it.isNotBlank() }

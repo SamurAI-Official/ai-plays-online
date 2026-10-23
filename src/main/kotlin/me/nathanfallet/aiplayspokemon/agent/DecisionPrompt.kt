@@ -6,33 +6,18 @@ import dev.kotlinds.pokemonclient.data.KnowledgeLevel
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
+import me.nathanfallet.aiplayspokemon.games.AgentKind
+import me.nathanfallet.aiplayspokemon.games.GameProfile
 
 /**
  * Turns "what the player can perceive and remember" into a decision request.
  *
- * The state is what a human would get from the screen (read from RAM) plus their memory, and the
- * general knowledge any player of the series has (how the controls behave). It never says which
- * option is right: with the story goal assist off, the AI has to work out where to go by itself.
+ * The state is what a human would get from the screen (read from RAM for the games we have a reader
+ * for) plus their memory, and what any player of that game knows (how the controls behave, from the
+ * game's [GameProfile]). It never says which option is right: with the story goal assist off, the AI
+ * has to work out where to go by itself.
  */
 object DecisionPrompt {
-
-    /** The default objective for the game named [gameName] (the detected ROM's name, e.g. "Pokémon Platinum (USA)"). */
-    fun defaultObjective(gameName: String): String =
-        "Play ${gameName.substringBefore(" (")} like a good player: follow the story, talk to people to learn where to go, " +
-            "explore new places, win battles, catch Pokémon and keep the team healthy."
-
-    /** What any player of the series knows about the controls; not specific to the situation. */
-    private const val CONVENTIONS =
-        "How the game works: a D-pad press turns you to face that direction if you weren't already, " +
-            "otherwise it walks one tile. A talks to or examines what you are facing and advances text; " +
-            "a message box must be advanced with A until it closes. B cancels and backs out of menus and screens. " +
-            "Walking onto stairs, doors and ladders (exits) takes you to another place; for exit mats at the edge " +
-            "of a room, stand on them and press towards the edge. People walk around and block the way. " +
-            "If `previous_movement_failure` is set, your last move was refused with the reason given: don't do it that " +
-            "way again (a wall means another direction, a message box means advance it with A). " +
-            "If a way is blocked or you bump into the same wall twice, do not press that direction again: " +
-            "re-read the exits and people around you in `game` and go to one with go_to or interact. " +
-            "PCs, TVs and bookshelves are optional; the story moves forward by talking to people and going to new places."
 
     /**
      * How a sequence (the options after the choice: `then`) runs: the same chain as the MCP agents' (`ChainRunner.forAgent`,
@@ -47,8 +32,8 @@ object DecisionPrompt {
             "${ChainLimits.AGENT.idle.inWholeSeconds} s, or after ${ChainLimits.AGENT.total.inWholeSeconds} s in all. When the battle " +
             "ends, its battle options left are dropped (`dropped`, `dropped_code`) and the others go on."
 
-    private fun instructions(settings: PlayerSettings, planner: Boolean, gameName: String, sequences: Boolean): String = buildString {
-        append("You are playing ${gameName.substringBefore(" (")} on a Nintendo DS. ")
+    private fun instructions(settings: PlayerSettings, planner: Boolean, profile: GameProfile, sequences: Boolean): String = buildString {
+        append("You are playing ${profile.shortTitle} on a Nintendo DS. ")
         append(
             when (settings.mode) {
                 ControlMode.PURE -> "You hold the controller: each option is a button to press (or waiting). "
@@ -60,10 +45,12 @@ object DecisionPrompt {
         append("actions and exactly what changed after each one, where you have been, what you read")
         if (settings.exploredMap) append(", the map of what you have explored")
         append(". ")
-        append(CONVENTIONS)
+        append(profile.conventions)
         append(" Choose the next option that makes the most progress towards `objective`")
-        if (settings.knowledge.allows(KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)) append(" and `game.story_goals` (when there are several open goals, any of them)")
-        if (settings.knowledge.allows(KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)) append("; your current goal and the goals blocked right now are in `memory.story` (clear the blockers before the blocked goals)")
+        if (profile.agent == AgentKind.TYPED && settings.knowledge.allows(KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)) {
+            append(" and `game.story_goals` (when there are several open goals, any of them)")
+            append("; your current goal and the goals blocked right now are in `memory.story` (clear the blockers before the blocked goals)")
+        }
         append(". If your recent actions changed nothing, do something different.")
         if (sequences) append(" ").append(SEQUENCE_RULES)
         if (planner) append(" You are the planner: also write in `note` the goal and plan the fast decision model should follow next.")
@@ -77,8 +64,8 @@ object DecisionPrompt {
         generative: Boolean,
         plannerGoal: String? = null,
         planner: Boolean = false,
-        /** The game being played (the detected ROM's name): the prompt names it, whatever the game. */
-        gameName: String,
+        /** The game being played: names it in the prompt and carries its per-game conventions. */
+        profile: GameProfile,
         /** Why the last movement step failed (blocked by a wall, a person...): shown once, then cleared. */
         previousMovementFailure: String? = null,
     ) = ChoiceRequest(
@@ -89,7 +76,7 @@ object DecisionPrompt {
             put("game", turn.state)
             put("memory", memory.describe(settings.exploredMap, turn.gameState.field))
         },
-        instructions = instructions(settings, planner, gameName, sequences = generative && settings.allowSequences),
+        instructions = instructions(settings, planner, profile, sequences = generative && settings.allowSequences),
         options = turn.options.associate { it.key to it.description },
         allowSequence = generative && settings.allowSequences,
         reasoning = settings.reasoning,

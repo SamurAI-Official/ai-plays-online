@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowState
+import me.nathanfallet.aiplayspokemon.games.DetectedRom
+import java.nio.file.Path
 
 /**
  * Root composable: the game on the left, the control panel on the right.
@@ -33,7 +35,18 @@ import androidx.compose.ui.window.WindowState
  * handy to sit next to an MCP agent's terminal.
  */
 @Composable
-fun App(controller: AppController, window: WindowState) {
+fun App(
+    controller: AppController,
+    window: WindowState,
+    /** The ROM currently loaded (marked in the game picker). */
+    currentRom: Path,
+    /** The ROMs found in the ROMs directory, with the profile each one would use. */
+    games: List<DetectedRom>,
+    /** Opens another game: the caller closes the current one and rebuilds the app around the new ROM. */
+    onSelectGame: (Path) -> Unit,
+    /** Asks for a ROM with the native file picker. */
+    onBrowse: () -> Unit,
+) {
     var collapsed by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme()) {
         Surface(Modifier.fillMaxSize()) {
@@ -56,6 +69,10 @@ fun App(controller: AppController, window: WindowState) {
                 if (!collapsed) {
                     ControlPanel(
                         controller,
+                        currentRom,
+                        games,
+                        onSelectGame,
+                        onBrowse,
                         Modifier.width(PANEL_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()),
                     )
                 }

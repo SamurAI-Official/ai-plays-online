@@ -57,13 +57,23 @@ import me.nathanfallet.aiplayspokemon.agent.PlayerState
 import me.nathanfallet.aiplayspokemon.agent.RunStats
 import me.nathanfallet.aiplayspokemon.agent.PokemonPlayer
 import me.nathanfallet.aiplayspokemon.decision.DecisionBackend
+import me.nathanfallet.aiplayspokemon.games.AgentKind
+import me.nathanfallet.aiplayspokemon.games.DetectedRom
+import java.nio.file.Path
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmProvider
 import dev.kotlinds.pokemonclient.view.StateView
 
 /** The right-hand panel: AI controls, what the AI sees, and what it decided. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ControlPanel(controller: AppController, modifier: Modifier = Modifier) {
+fun ControlPanel(
+    controller: AppController,
+    currentRom: Path,
+    games: List<DetectedRom>,
+    onSelectGame: (Path) -> Unit,
+    onBrowse: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val player by controller.player.collectAsState()
     val backend by controller.backend.collectAsState()
     val status by controller.emulator.status.collectAsState()
@@ -71,8 +81,9 @@ fun ControlPanel(controller: AppController, modifier: Modifier = Modifier) {
 
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("AI plays Online", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        GameSelector(controller, currentRom, games, onSelectGame, onBrowse)
         Text(
-            "${controller.game?.name ?: "Unsupported game"} · ${controller.emulator.info.name} · ${"%.0f".format(status.measuredFps)} fps",
+            "${controller.profile.shortTitle} · ${controller.emulator.info.name} · ${"%.0f".format(status.measuredFps)} fps",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -113,7 +124,10 @@ fun ControlPanel(controller: AppController, modifier: Modifier = Modifier) {
 
         val currentPlayer = player
         when {
-            controller.game == null -> Text("This ROM isn't supported by the agent yet: you can still play it yourself.")
+            controller.game == null && controller.profile.agent == AgentKind.SCREEN -> Text(
+                "No typed reader for this game yet: the AI would only have the screen, which is not wired up yet, so " +
+                    "you can play it yourself. Its profile (objective and conventions) is in the game picker.",
+            )
             backend == DecisionBackend.MCP -> McpSection(controller)
             currentPlayer == null -> ApiKeyForm(controller.missingApiKey ?: "the model", controller::setApiKey)
             else -> PlayerSection(currentPlayer)
@@ -667,3 +681,77 @@ private val KNOWLEDGE_LABELS = mapOf(
     KnowledgeLevel.POKEDEX to "Pokédex",
     KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH to "+ Walkthrough",
 )
+
+/**
+ * Which game is loaded, and a way to pick another one.
+ *
+ * The list comes from the ROMs directory (`~/.ai-plays-online/roms` by default,
+ * `AI_PLAYS_ONLINE_ROMS_DIR` to change it): each ROM is identified by its header, so the picker shows
+ * the game's name, whether the AI gets the game's state or only the screen, and what we verified for
+ * it. Switching closes the running console (saving the game) and opens the chosen ROM.
+ */
+@Composable
+private fun GameSelector(
+    controller: AppController,
+    currentRom: Path,
+    games: List<DetectedRom>,
+    onSelectGame: (Path) -> Unit,
+    onBrowse: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val profile = controller.profile
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                OutlinedButton(onClick = { expanded = true }) {
+                    Text("Game: ${profile.title}", style = MaterialTheme.typography.labelSmall)
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    if (games.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("No ROMs in the ROMs folder") },
+                            onClick = { expanded = false },
+                        )
+                    }
+                    games.forEach { game ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(game.profile.title, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        agentLabel(game.profile.agent) +
+                                            game.profile.tested.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            onClick = {
+                                expanded = false
+                                if (game.path != currentRom) onSelectGame(game.path)
+                            },
+                        )
+                    }
+                    DropdownMenuItem(text = { Text("Browse…") }, onClick = { expanded = false; onBrowse() })
+                }
+            }
+            Text(
+                agentLabel(profile.agent),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            "Objective: ${profile.objective}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** How the picker describes what an AI can see of a game. */
+private fun agentLabel(agent: AgentKind): String = when (agent) {
+    AgentKind.TYPED -> "typed agent (reads the game)"
+    AgentKind.SCREEN -> "screen only"
+}
+

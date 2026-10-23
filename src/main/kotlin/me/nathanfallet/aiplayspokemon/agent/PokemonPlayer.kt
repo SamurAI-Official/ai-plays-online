@@ -21,6 +21,8 @@ import dev.kotlinds.pokemonclient.actions.GameAction
 import dev.kotlinds.pokemonclient.state.GameState
 import dev.kotlinds.pokemonclient.world.Area
 import me.nathanfallet.aiplayspokemon.agent.VisionVerifier
+import me.nathanfallet.aiplayspokemon.games.GameCatalog
+import me.nathanfallet.aiplayspokemon.games.GameProfile
 import java.nio.file.Path
 import kotlin.random.Random
 
@@ -45,10 +47,12 @@ class PokemonPlayer(
     private val scope: CoroutineScope,
     settings: () -> PlayerSettings,
     runsDirectory: Path?,
+    /** The game's profile: the per-game objective and conventions the prompts carry. */
+    private val profile: GameProfile = GameCatalog.generic,
     /** The stream's voice for decisions (null: silent). Asked per use, so toggling needs no new player. */
     private val narrator: () -> DecisionNarrator? = { null },
 ) {
-    val session = AgentSession(emulator, game, recorder, settings)
+    val session = AgentSession(emulator, game, recorder, settings, profile)
     private val settings get() = session.settings()
     private val emulator = emulator
     private val stats = RunStats(runsDirectory, "${model.name}${planner?.let { " + planner ${it.name}" } ?: ""}")

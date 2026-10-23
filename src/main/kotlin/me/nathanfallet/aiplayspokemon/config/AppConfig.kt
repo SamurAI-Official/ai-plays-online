@@ -128,6 +128,13 @@ class AppConfig(
 
     fun saveRomPath(path: Path) = save("rom", path.toAbsolutePath().toString())
 
+    /**
+     * Where the game picker looks for ROMs. Defaults to `<data>/roms`; set `AI_PLAYS_ONLINE_ROMS_DIR`
+     * (or the `roms.dir` config key) to point at a folder you already keep them in.
+     */
+    val romsDirectory: Path
+        get() = setting("AI_PLAYS_ONLINE_ROMS_DIR", "roms.dir")?.let(Path::of) ?: dataDirectory.resolve("roms")
+
     private val LlmProvider.key get() = name.lowercase()
 
     private fun setting(variable: String?, key: String): String? =
@@ -139,7 +146,7 @@ class AppConfig(
     private fun save(key: String, value: String?) {
         if (value == null) properties.remove(key) else properties.setProperty(key, value)
         Files.createDirectories(dataDirectory)
-        configFile.outputStream().use { properties.store(it, "AI plays Pokémon") }
+        configFile.outputStream().use { properties.store(it, "AI plays Online") }
     }
 
     companion object {
