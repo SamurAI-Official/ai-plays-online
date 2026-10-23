@@ -49,5 +49,21 @@ fun main(args: Array<String>) {
         catch (e: Exception) { e::class.java.simpleName + ": " + (e.message ?: "") }
     } ?: "(none)"
     println("LibretroCoreSpec.forRom(rom, emulatorCore) => $coreSpec")
+    println("--- game picker (what the app offers at startup) ---")
+    println("romsDirectory: ${config.romsDirectory}")
+    println("last played  : ${config.rememberedRomPath ?: "(none)"}")
+    val games = me.nathanfallet.aiplayspokemon.games.GameCatalog.scan(config.romsDirectory, config.dataDirectory)
+    if (games.isEmpty()) {
+        println("(no ROM in the folder: the picker would say so and offer Browse…)")
+    }
+    games.forEach { game ->
+        val profile = game.profile
+        val walkthrough = me.nathanfallet.aiplayspokemon.games.WalkthroughCatalog.of(profile, config.dataDirectory)
+        println(
+            "- ${profile.title} [${profile.gameCode}] · ${profile.agent} · " +
+                "walkthrough: ${walkthrough?.chapters?.size ?: 0} chapters · ${game.path.fileName}",
+        )
+    }
+    println("--- the app would start on the picker (no game loaded) ---")
     println("=== PROBE DONE (no UI started — headless OK) ===")
 }

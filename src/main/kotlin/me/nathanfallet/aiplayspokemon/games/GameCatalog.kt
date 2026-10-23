@@ -135,7 +135,7 @@ object GameCatalog {
         GameProfile(
             id = "phantasy-star-0",
             title = "Phantasy Star 0",
-            gameCode = "C2SE",
+            gameCode = "C24E",
             romTitle = "PSZERO",
             agent = AgentKind.SCREEN,
             objective = "Follow the story: take the quests in town, explore the fields and dungeons, fight the " +
@@ -149,7 +149,7 @@ object GameCatalog {
         GameProfile(
             id = "age-of-empires-aok",
             title = "Age of Empires: The Age of Kings",
-            gameCode = "AE2E",
+            gameCode = "AEKE",
             romTitle = "AOK2",
             agent = AgentKind.SCREEN,
             objective = "Play the campaign: gather resources, build and defend a base, train an army and complete " +
