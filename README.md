@@ -73,6 +73,31 @@ ROM that you dumped yourself** (no ROM is provided — see [Tested games](#teste
 
 A ROM on the command line (`./gradlew startApp -PappArgs="/path/to/game.nds"`) opens that game directly.
 
+## The launcher (macOS)
+
+`./make_launcher.sh` builds the app and installs **AI Plays Online.app** into `~/Applications` and
+`~/StreamBoyDS`:
+
+```bash
+./make_launcher.sh              # build the uber jar, then (re)install the app
+./make_launcher.sh --no-build   # reuse the jar already in build/compose/jars
+./make_launcher.sh ~/Desktop    # install somewhere else
+```
+
+The app is a **launcher over this repository's build**: its script starts the newest jar in
+`build/compose/jars` (and builds one when there is none), so it always runs the current code — no jar copied
+into the app that goes stale. Double-click it, or:
+
+```bash
+open -a "AI Plays Online"                          # the game picker
+open -a "AI Plays Online" --args "/path/to/game.nds"   # straight into a game
+```
+
+The app's output goes to `~/Library/Logs/AI plays Online.log`, and `AI_PLAYS_ONLINE_HOME` points the launcher
+at another checkout. The pieces live in [`launcher/`](launcher) (the script, the `Info.plist`, the icon) and
+`make_launcher.sh` fills in the paths; the LLM settings the launcher exports (the OpenAI-compatible endpoint)
+are read from the environment, so override them there instead of editing the app.
+
 ## Tested games
 
 We run every title ourselves and record what works. "Typed agent" means the AI gets the game's state read from RAM

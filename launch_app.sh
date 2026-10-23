@@ -1,6 +1,9 @@
 #!/bin/sh
-# Launches the AI plays Online app directly with the full runtime classpath.
+# Development runner: launches the app from source with the full runtime classpath.
 # Usage: ./launch_app.sh [rom_path]
+#
+# For a double-clickable app, use ./make_launcher.sh instead: it builds the uber jar and
+# installs "AI Plays Online.app", which always starts the newest jar of this repository.
 cd "$(dirname "$0")"
 ROM="${1:-}"
 if [ -n "$ROM" ]; then
