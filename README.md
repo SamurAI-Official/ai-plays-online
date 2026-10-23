@@ -67,15 +67,15 @@ We run every title ourselves and record what works. "Typed agent" means the AI g
 is measured, but the AI would only have the screen. A ROM is identified by its header, so another region or revision
 of the same game still works (and may be untested).
 
-| Game | ROM code | Agent | Rollback-safe | Verified |
-|---|---|---|---|---|
-| Pokémon HeartGold | `IPKE` | typed | melonDS ✅ / DeSmuME ✅ | 1,000-frame determinism, 300-frame two-process rollback with 1/3 packet loss, delta snapshots |
-| Pokémon Platinum | `CPUE` | typed | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
-| Mario Kart DS | `AMCE` | screen only | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
-| Final Fantasy III | `AFFE` | screen only | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
-| Final Fantasy IV | `YF4E` | screen only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
-| Phantasy Star 0 | `C2SE` | screen only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
-| Age of Empires: The Age of Kings | `AE2E` | screen only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Game | ROM code | Agent | Walkthrough | Rollback-safe | Verified |
+|---|---|---|---|---|---|
+| Pokémon HeartGold | `IPKE` | typed | 12 chapters, generated from its story table (verified progress) | melonDS ✅ / DeSmuME ✅ | 1,000-frame determinism, 300-frame two-process rollback with 1/3 packet loss, delta snapshots |
+| Pokémon Platinum | `CPUE` | typed | — (needs its story table) | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Mario Kart DS | `AMCE` | screen only | 7 chapters, front-end landmark captured | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
+| Final Fantasy III | `AFFE` | screen only | 5 chapters, hints only | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
+| Final Fantasy IV | `YF4E` | screen only | 5 chapters, hints only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Phantasy Star 0 | `C2SE` | screen only | 6 chapters, front-end landmark captured | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Age of Empires: The Age of Kings | `AE2E` | screen only | 5 chapters, hints only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
 
 All seven boot and run on both patched cores; 12 of the 14 game/core combinations pass a 600-frame save/load
 determinism check (the two that do not are melonDS's, and only for those two titles). The raw numbers — state size,
@@ -145,6 +145,12 @@ reasoning and note.
 closes its console and opens the chosen ROM; **Browse…** takes any `.nds` file. Each game's prompt (objective and
 conventions) lives in its profile, and you can override any profile — or add your own game — in
 `~/.ai-plays-online/games.json`; see [`docs/games.md`](docs/games.md).
+
+**The walkthrough** (below it) is what the run is working on: the current chapter's goal and hints, a dropdown to pin
+another chapter, and **Follow progress** — on, the app advances the chapter by itself (from the game's own verified
+progress for Pokémon, or from a screen landmark for the other titles), off, only you move it. The text is data:
+shipped with the app and overridable in `~/.ai-plays-online/walkthroughs/`; **Copy for editing** writes the current one
+out. See [`docs/walkthroughs.md`](docs/walkthroughs.md).
 
 **Claude without an API key**: choose LLM → *Claude (Claude Code login)* with a model like `sonnet` or `opus`. Each
 decision runs `claude -p` (a few seconds of overhead) and counts towards your Claude plan's usage.
@@ -279,10 +285,11 @@ unsure. Having the three side by side, with milestones recorded for each run, is
 ## Extending
 
 - **Another game**: the app identifies a ROM by its header and looks up a *game profile* (name, per-game objective and
-  conventions prompt, whether the AI gets RAM state or the screen, preferred core). Profiles for the titles in
-  [Tested games](#tested-games) ship with the app, and yours can be added without touching the code — see
-  [`docs/games.md`](docs/games.md). Full RAM-level support for a new game is a reader in
-  [pokemon-client](https://github.com/kotlinds/pokemon-client), see its
+  conventions prompt, whether the AI gets RAM state or the screen, preferred core) and a *walkthrough* (the chapters of
+  its progression, with hints and, for games we only see the screen of, the screen each chapter happens on). Profiles
+  and walkthroughs ship for the titles in [Tested games](#tested-games) and yours can be added without touching the
+  code — see [`docs/games.md`](docs/games.md) and [`docs/walkthroughs.md`](docs/walkthroughs.md). Full RAM-level
+  support for a new game is a reader in [pokemon-client](https://github.com/kotlinds/pokemon-client), see its
   [adding-a-game guide](https://github.com/kotlinds/pokemon-client/blob/main/docs/adding-a-game.md): implement
   `PokemonGame` (RAM → `GameState`, screen decoders, optionally `world` and `data` from the ROM), register its ROM code
   in `PokemonGames`, and give it its recipes; the navigator, the registry, the MCP server and every decider work

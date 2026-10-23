@@ -1,0 +1,78 @@
+{
+  "id": "mario-kart-ds",
+  "provenance": "hand-written",
+  "chapters": [
+    {
+      "id": "mkds:boot",
+      "title": "Boot to the front end",
+      "goal": "Get past the boot and intro to the game's front end (its title and attract screen).",
+      "hints": [
+        "The DS boots into an intro; pressing START or A skips it.",
+        "Until the front end is reached, nothing else in this walkthrough applies."
+      ],
+      "milestone": {
+        "kind": "frameHash",
+        "hashes": ["dhash:0110011003c50200"],
+        "threshold": 6,
+        "minStableChecks": 3
+      }
+    },
+    {
+      "id": "mkds:menu",
+      "title": "Reach the main menu",
+      "goal": "Get from the title screen to the game's main menu.",
+      "hints": [
+        "The intro is an attract video: press START (or A) to skip to the title, then START again for the menu.",
+        "The menu is on the lower (touch) screen: Single Player, Multiplayer, Nintendo WFC, Options.",
+        "If a screen does not react to the D-pad, tap it: this game is driven by the touch screen."
+      ]
+    },
+    {
+      "id": "mkds:grand-prix",
+      "title": "Start a Grand Prix",
+      "goal": "Start a Grand Prix race: Single Player, then Grand Prix, then a cup and a character.",
+      "hints": [
+        "Single Player is the top-left button on the lower screen.",
+        "Grand Prix asks for an engine class (50cc first) and then a cup.",
+        "Pick a character and a kart; the game remembers the choice."
+      ]
+    },
+    {
+      "id": "mkds:mushroom-cup",
+      "title": "Win the Mushroom Cup (50cc)",
+      "goal": "Finish first in the Mushroom Cup's four races on 50cc to take the cup.",
+      "hints": [
+        "A accelerates, B brakes, the D-pad steers; hold R through a turn to drift and keep speed.",
+        "Items are used with X; a banana or a shell behind you is defence, not a mistake.",
+        "Points come from finishing position: 1st is 10, then 8, 6, 4, 3, 2, 1, 0."
+      ]
+    },
+    {
+      "id": "mkds:flower-cup",
+      "title": "Win the Flower Cup (50cc)",
+      "goal": "Take the Flower Cup the same way, then the Star and Special cups.",
+      "hints": [
+        "The cup screen shows which cups are open: winning unlocks the next one.",
+        "Shortcut jumps are usually not worth the risk without a mushroom item."
+      ]
+    },
+    {
+      "id": "mkds:faster-classes",
+      "title": "Move up to 100cc and 150cc",
+      "goal": "Race the faster engine classes and the Mirror cups.",
+      "hints": [
+        "Engine class is chosen on the Grand Prix screen; 100cc and 150cc unlock as cups are won.",
+        "Mirror cups appear once the 150cc cups are done."
+      ]
+    },
+    {
+      "id": "mkds:mission-mode",
+      "title": "Try Mission Mode",
+      "goal": "Play Mission Mode to practise the game's mechanics and unlock the boss missions.",
+      "hints": [
+        "Mission Mode is on the main menu, under Single Player.",
+        "Each mission gives a target: a lap time, a number of coins, a boss to beat."
+      ]
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.buildJsonObject
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import me.nathanfallet.aiplayspokemon.games.GameProfile
+import me.nathanfallet.aiplayspokemon.games.WalkthroughState
 
 /**
  * The game as seen by our own AI player (LLM through Koog, Claude Code, Jev), on top of the [GameSession] shared
@@ -31,6 +32,8 @@ class AgentSession(
     val settings: () -> PlayerSettings,
     /** The game's profile: what to aim for, and how this game behaves (the per-game prompt). */
     val profile: GameProfile,
+    /** The walkthrough in play (which chapter we are on), shared with the panel. */
+    val walkthrough: WalkthroughState = WalkthroughState(),
 ) {
     val gameSession = GameSession(host, game, recorder, options = { settings().agentOptions })
     val memory = AgentMemory()
@@ -88,6 +91,10 @@ class AgentSession(
         if (settings().knowledge.allows(dev.kotlinds.pokemonclient.data.KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)) {
             memory.observeStory(StoryGoals.plan(gameState))
         }
+        // Typed games verify their own progress: the chapter is the first whose story steps are not all done.
+        gameState.story?.let { story ->
+            walkthrough.followProgress(story.completed.map { it.id }.toSet())
+        }
         val options = options(gameState).values.map { Option(it.key, describe(it, gameState.screen), it) }
         return Turn(gameState, state, options)
     }
@@ -104,6 +111,8 @@ class AgentSession(
         plannerGoal = plannerGoal.takeIf { settings().mode == ControlMode.HYBRID && !planner },
         planner = planner,
         profile = profile,
+        walkthrough = walkthrough.walkthrough.value,
+        chapter = walkthrough.chapter,
         previousMovementFailure = lastMovementFailure?.let { failure ->
             lastMovementFailure = null
             failure.takeIf { it.isNotBlank() }

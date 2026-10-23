@@ -1,0 +1,55 @@
+{
+  "id": "final-fantasy-iii",
+  "provenance": "hand-written",
+  "chapters": [
+    {
+      "id": "ff3:start",
+      "title": "Start the game",
+      "goal": "Start a new game and get through the opening.",
+      "hints": [
+        "The title screen needs START or A; the touch screen can also be used for menus.",
+        "Choose New Game and let the opening play: it introduces the four orphans.",
+        "Name the characters if asked; the names do not matter."
+      ]
+    },
+    {
+      "id": "ff3:altar-cave",
+      "title": "The Altar Cave",
+      "goal": "Get through the first dungeon (the Altar Cave) and come back with the wind crystal.",
+      "hints": [
+        "Talk to everyone: people in towns say where to go next.",
+        "Battles are menus: Fight, Magic, Item, Run; the D-pad picks and A confirms.",
+        "Buy Potions before leaving town; keep the party's HP up and heal at inns."
+      ]
+    },
+    {
+      "id": "ff3:jobs",
+      "title": "The wind crystal and jobs",
+      "goal": "Receive the jobs from the wind crystal and set the party's jobs.",
+      "hints": [
+        "The crystal gives the first set of jobs; change jobs from the menu.",
+        "Job level grows with use: a character gets better at a job the longer they stay in it."
+      ]
+    },
+    {
+      "id": "ff3:equipment",
+      "title": "Gear up",
+      "goal": "Equip better weapons and armour and keep enough items in the bag.",
+      "hints": [
+        "Weapons and armour are bought in towns; the equip screen shows what is better.",
+        "A healer job with Cure makes dungeons much safer.",
+        "Save from the menu, and on the world map when the game allows it."
+      ]
+    },
+    {
+      "id": "ff3:crystals",
+      "title": "Follow the crystals",
+      "goal": "Follow the story through the fire, water and earth crystals, then the dark crystal.",
+      "hints": [
+        "Each crystal is reached through a town and a dungeon: talk in the town first.",
+        "The world opens up as the story advances: the ship and later an airship.",
+        "Keep levelling the party: the later dungeons punish an under-levelled group."
+      ]
+    }
+  ]
+}

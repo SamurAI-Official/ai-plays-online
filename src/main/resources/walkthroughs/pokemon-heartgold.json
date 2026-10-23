@@ -1,0 +1,244 @@
+{
+    "id": "pokemon-heartgold",
+    "provenance": "hand-written",
+    "chapters": [
+        {
+            "id": "hgss:badge_zephyr",
+            "title": "Falkner at the Violet City Gym",
+            "goal": "Challenge Falkner at the Violet City Gym",
+            "hints": [
+                "Follow Route 29 west to Cherrygrove City and talk to the old man there (Guide Gent)",
+                "Head north out of Cherrygrove City toward Route 30 (the Guide Gent has one more thing for you)",
+                "Go to Mr. Pokémon's house: north of Cherrygrove City, along Route 30",
+                "Leave Mr. Pokémon's house and head back toward New Bark Town",
+                "Go back south through Cherrygrove City, toward New Bark Town",
+                "Return to Prof. Elm's lab in New Bark Town with the Mystery Egg",
+                "Head west on Route 29 again (Lyra will show you how to catch Pokémon)",
+                "Go north through Routes 30 and 31 to Violet City, then climb Sprout Tower and beat Elder Li at the top"
+            ],
+            "steps": [
+                "johto:talk_to_mom",
+                "johto:leave_house",
+                "johto:meet_elm",
+                "johto:choose_starter",
+                "johto:lab_aide",
+                "johto:leave_lab",
+                "johto:pokegear",
+                "johto:leave_new_bark",
+                "johto:guide_gent",
+                "johto:map_card",
+                "johto:mr_pokemon",
+                "johto:elm_call",
+                "johto:rival_cherrygrove",
+                "johto:return_egg",
+                "johto:catching_tutorial",
+                "johto:sprout_tower",
+                "johto:badge_zephyr"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:badge_hive",
+            "title": "Bugsy at the Azalea Town Gym",
+            "goal": "Challenge Bugsy at the Azalea Town Gym (bug type: Fire and Flying moves work well)",
+            "hints": [
+                "Go to the Violet City Poké Mart: Elm's aide waits there with an egg for you (keep a free party slot)",
+                "Head south from Violet City down Route 32 (Elm's aide checks your badge and egg at the start), then go through Union Cave to Azalea Town",
+                "In Azalea Town, talk to Kurt (north-west house), then follow him into the Slowpoke Well (north of town) and beat Team Rocket and their lead…"
+            ],
+            "steps": [
+                "johto:togepi_egg",
+                "johto:route_32",
+                "johto:slowpoke_well",
+                "johto:badge_hive"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:badge_plain",
+            "title": "Whitney at the Goldenrod City Gym",
+            "goal": "Challenge Whitney at the Goldenrod City Gym (Normal type: Fighting moves work well)",
+            "hints": [
+                "Leave Azalea Town to the west toward Ilex Forest: your rival waits at the exit",
+                "In Ilex Forest, find the charcoal maker's lost Farfetch'd (follow it and push it back toward the entrance) to get HM01 Cut; teach Cut and c…",
+                "Cross Ilex Forest and Route 34 north to Goldenrod City. The Gym is closed for now (a woman stands in front of its door: Whitney went to the…"
+            ],
+            "steps": [
+                "johto:rival_azalea",
+                "johto:ilex_forest",
+                "johto:radio_card",
+                "johto:badge_plain"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:badge_fog",
+            "title": "Morty at the Ecruteak City Gym",
+            "goal": "Challenge Morty at the Ecruteak City Gym (Ghost type: Dark moves work well; Normal and Fighting moves can't hit)",
+            "hints": [
+                "Get the SquirtBottle at the Goldenrod Flower Shop, then go north (Route 35, National Park, Route 36) and water the odd tree blocking Route…",
+                "Go on through Route 37 to Ecruteak City and enter the Burned Tower (north-west): beat your rival, then go down to the basement where the le…"
+            ],
+            "steps": [
+                "johto:sudowoodo",
+                "johto:burned_tower",
+                "johto:badge_fog"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:radio_tower",
+            "title": "Team Rocket has taken over the Goldenrod Radio Tower. In order: 1) in the Goldenrod Underground",
+            "goal": "Team Rocket has taken over the Goldenrod Radio Tower. In order: 1) in the Goldenrod Underground (Tunnel B1F), a Rocket grunt gives you a Team Rocket uniform (the grunt on Radio Tower 1F only lets a Rocket up the stairs); 2) go up from Radio Tower 1F (your rival battles you there); 3) on 5F the fake Director (Executive Petrel) battles you and gives the Basement Key; 4) open the locked door of Goldenrod Tunnel B1F with it and go through B2F to the Warehouse, where the real Director gives you the Card Key; 5) open the 3F shutter with it, climb to the Observation Deck and beat Archer",
+            "hints": [
+                "Leave the Cianwood Gym: Chuck's wife waits outside with HM02 Fly",
+                "Get the SecretPotion for the sick Ampharos at the Cianwood City pharmacy (surf west from Olivine City across Routes 40 and 41)",
+                "Bring the SecretPotion to Jasmine at the top of the Olivine Lighthouse",
+                "Challenge Jasmine at the Olivine City Gym (Steel type: Fire, Fighting and Ground moves work well)",
+                "Go east from Ecruteak (Route 42, through Mt. Mortar; right after the gate a Hiker gives you HM04 Strength, keep it for the Ice Path) to Mah…",
+                "Talk to Lance on the Lake of Rage shore: he asks you to meet him in Mahogany Town",
+                "Enter the Mahogany Town souvenir shop with Lance and clear the Team Rocket hideout below it (beat the Executives, then the Electrode poweri…",
+                "Challenge Pryce at the Mahogany Town Gym (Ice type: Fire, Fighting, Rock and Steel moves work well)"
+            ],
+            "steps": [
+                "johto:surf",
+                "johto:lighthouse",
+                "johto:badge_storm",
+                "johto:fly",
+                "johto:secretpotion",
+                "johto:medicine",
+                "johto:badge_mineral",
+                "johto:red_gyarados",
+                "johto:lance_lake",
+                "johto:rocket_hideout",
+                "johto:badge_glacier",
+                "johto:radio_tower"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:badge_rising",
+            "title": "Clair wants you to pass the Dragon's Den test: enter the Den behind the Gym, surf and cross the whirlpools",
+            "goal": "Clair wants you to pass the Dragon's Den test: enter the Den behind the Gym, surf and cross the whirlpools (Whirlpool, HM05 from Lance in the Rocket hideout, taught to a party Pokémon) to the shrine and answer the elder's questions (be kind to your Pokémon); Clair then gives you the Rising Badge",
+            "hints": [
+                "Leave Mahogany Town east by Route 44 into the Ice Path and cross it to Blackthorn City. You need Strength (HM04, from the Hiker on Route 42…",
+                "Challenge Clair at the Blackthorn City Gym (Dragon type: Ice moves work well)"
+            ],
+            "steps": [
+                "johto:ice_path",
+                "johto:clair",
+                "johto:badge_rising"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:ho_oh",
+            "title": "Battle Ho-Oh on the Bell Tower roof",
+            "goal": "Battle Ho-Oh on the Bell Tower roof (level 45): catch it or defeat it",
+            "hints": [
+                "Go back to New Bark Town and visit Prof. Elm's lab (Mom stops you at the east exit until then)",
+                "Go to the Ecruteak Dance Theater (Elm says the Kimono Girls wait for you there): at its door your rival, just beaten by them, bumps into you",
+                "In the Ecruteak Dance Theater, battle the five Kimono Girls one after another (one Eeveelution each: Espeon, Umbreon, Vaporeon, Jolteon, Fl…",
+                "Go through the gate north-east of Ecruteak City (the sage lets you through) and climb the Bell Tower (the sage on 1F checks the Rainbow Win…"
+            ],
+            "steps": [
+                "johto:visit_elm",
+                "johto:kimono_call",
+                "johto:kimono_girls",
+                "johto:bell_tower",
+                "johto:ho_oh"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:elite_four",
+            "title": "Beat the Elite Four",
+            "goal": "Beat the Elite Four (Will, Koga, Bruno, Karen) and Champion Lance in a row at the Indigo Plateau (stock up on healing items first)",
+            "hints": [
+                "Get HM07 Waterfall: it lies on Ice Path 1F, in the part entered from Route 44 (east of Mahogany Town), not near the Blackthorn City exit (f…",
+                "Leave New Bark Town east: surf Route 27, climb Tohjo Falls (Waterfall) and follow Route 26 north to the Pokémon League Reception Gate",
+                "Cross Victory Road (north of the Reception Gate) to the Indigo Plateau; your rival waits near the exit. Strength (HM04) is needed: on 1F pu…"
+            ],
+            "steps": [
+                "johto:hm07",
+                "johto:league_gate",
+                "johto:victory_road",
+                "johto:elite_four"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:vermilion",
+            "title": "Vermilion City, Kanto",
+            "goal": "Get off the ship at Vermilion City, Kanto",
+            "hints": [
+                "Go home to New Bark Town and visit Prof. Elm's lab: he gives you the S.S. Ticket",
+                "Board the S.S. Aqua at the Olivine City port; on board, find the gentleman's lost granddaughter (ask the sailors and the captain) so the sh…"
+            ],
+            "steps": [
+                "kanto:ss_ticket",
+                "kanto:ss_aqua",
+                "kanto:vermilion"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:badge_earth",
+            "title": "Blue at the Viridian City Gym",
+            "goal": "Challenge Blue at the Viridian City Gym",
+            "hints": [
+                "Find Misty on Route 25 (Cerulean Cape, north-east of Cerulean City): she then returns to her Gym",
+                "Challenge Misty at the Cerulean City Gym (Water type: Electric and Grass moves work well)",
+                "Go to the Lavender Town Radio Station and talk to the director (top floor) to get the Expansion Card for the Pokégear radio",
+                "Wake the sleeping Snorlax in front of Diglett's Cave (Route 11, east of Vermilion City): play the Poké Flute channel on the Pokégear radio…",
+                "Go through Diglett's Cave: it comes out on Route 2; go south (through the Route 2 south-east gatehouse) to reach western Kanto at Viridian…",
+                "Challenge Brock at the Pewter City Gym (north of Viridian City; Rock type: Water, Grass and Fighting moves work well)",
+                "Challenge Blaine: his Gym is inside the Seafoam Islands. From Viridian City go south to Pallet Town, surf Route 21 south to Cinnabar Island…",
+                "With seven Kanto badges, talk to Blue on Cinnabar Island: he goes back to open the Viridian City Gym"
+            ],
+            "steps": [
+                "kanto:badge_thunder",
+                "kanto:badge_marsh",
+                "kanto:badge_rainbow",
+                "kanto:badge_soul",
+                "kanto:power_plant",
+                "kanto:cerulean_gym_rocket",
+                "kanto:route_24_rocket",
+                "kanto:machine_part",
+                "kanto:restore_power",
+                "kanto:misty",
+                "kanto:badge_cascade",
+                "kanto:expansion_card",
+                "kanto:snorlax",
+                "kanto:viridian",
+                "kanto:badge_boulder",
+                "kanto:badge_volcano",
+                "kanto:blue_cinnabar",
+                "kanto:badge_earth"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:mt_silver_permission",
+            "title": "Visit Prof. Oak in his Pallet Town lab: with all 16 badges he gives you HM08 Rock Climb",
+            "goal": "Visit Prof. Oak in his Pallet Town lab: with all 16 badges he gives you HM08 Rock Climb (needed in Mt. Silver) and lets you enter Mt. Silver",
+            "hints": [],
+            "steps": [
+                "kanto:mt_silver_permission"
+            ],
+            "milestone": null
+        },
+        {
+            "id": "hgss:red",
+            "title": "Go through the Pokémon League gate",
+            "goal": "Go through the Pokémon League gate (Route 22, west of Viridian City) to Route 28 and Mt. Silver, climb to the summit and beat Red. Rock Climb (HM08 from Prof. Oak, taught to a party Pokémon) is needed for the walls on the way up",
+            "hints": [
+                "Go through the Pokémon League gate (Route 22, west of Viridian City) to Route 28 and Mt. Silver, climb to the summit and beat Red. Rock Cli…"
+            ],
+            "steps": [
+                "kanto:red"
+            ],
+            "milestone": null
+        }
+    ]
+}

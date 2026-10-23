@@ -1,0 +1,56 @@
+{
+  "id": "final-fantasy-iv",
+  "provenance": "hand-written",
+  "chapters": [
+    {
+      "id": "ff4:start",
+      "title": "Start the game",
+      "goal": "Start a new game and follow the opening on the airship.",
+      "hints": [
+        "The title screen needs START or A; menus can be driven with the touch screen too.",
+        "The opening is a story scene: advancing the text is the whole action.",
+        "The game explains its own systems as it goes; read the dialogue."
+      ]
+    },
+    {
+      "id": "ff4:battles",
+      "title": "Learn the battles",
+      "goal": "Win the first battles and learn the battle menu.",
+      "hints": [
+        "The battle menu is Fight, Magic, Item, Run (and later Auto): the D-pad picks, A confirms.",
+        "Row matters: characters in the back row take less physical damage but hit less hard with weapons.",
+        "Use Potions when HP drops; do not wait until someone is nearly down."
+      ]
+    },
+    {
+      "id": "ff4:kaipo",
+      "title": "Kaipo and the Watery Pass",
+      "goal": "Reach Kaipo, then get through the Watery Pass (Antlion's cave).",
+      "hints": [
+        "Talk to the people in town: the game tells you the next place through them.",
+        "Buy Potions and better armour when you can afford it.",
+        "Save on the world map whenever the game offers it."
+      ]
+    },
+    {
+      "id": "ff4:crystals",
+      "title": "Follow the crystals",
+      "goal": "Follow the story through the crystal quests and the dungeons between them.",
+      "hints": [
+        "The story moves through towns and dungeons: talk, then travel.",
+        "The party changes as the story goes; check the equipment of new members.",
+        "Magic is the answer to most bosses: attack their weakness rather than only attacking."
+      ]
+    },
+    {
+      "id": "ff4:underworld",
+      "title": "The underworld",
+      "goal": "Follow the story into the underworld and keep the party ready for the harder fights.",
+      "hints": [
+        "Levels and equipment matter more than speed here: fight the encounters you meet.",
+        "Keep a healer in the party with a group-healing spell before a boss.",
+        "Save often: dungeons here are long."
+      ]
+    }
+  ]
+}

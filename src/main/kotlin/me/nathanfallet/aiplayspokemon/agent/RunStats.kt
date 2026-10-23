@@ -3,6 +3,7 @@ package me.nathanfallet.aiplayspokemon.agent
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import dev.kotlinds.pokemonclient.state.GameState
+import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDateTime
@@ -48,6 +49,26 @@ class RunStats(private val directory: Path?, private val configuration: String) 
             save(decisions, presses, inputTokens, costUsd)
         }
         return reached
+    }
+
+    /**
+     * Records a walkthrough chapter as reached: one milestone per chapter, whichever way it was reached (typed
+     * progress, a screen landmark, or the panel). Also used for screen-only games, where nothing else can tell how
+     * far the run got.
+     */
+    fun chapterReached(chapter: WalkthroughChapter, decisions: Int, presses: Int, inputTokens: Long, costUsd: Double): Milestone? {
+        if (!seen.add("chapter ${chapter.id}")) return null
+        val milestone = Milestone(
+            "Chapter: ${chapter.title}",
+            decisions,
+            presses,
+            (System.currentTimeMillis() - startedAt) / 1000,
+            inputTokens,
+            costUsd,
+        )
+        milestones = milestones + milestone
+        save(decisions, presses, inputTokens, costUsd)
+        return milestone
     }
 
     /**

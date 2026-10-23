@@ -30,6 +30,7 @@ enum class AgentKind {
  * @param touch whether the stylus matters for this game
  * @param preferredCore `LibretroCoreSpec` name to start with, or null for the app default
  * @param tested what we verified ourselves, shown in the game picker and the README
+ * @param walkthroughId walkthrough to use (`walkthroughs/<id>.json`), or null to use [id]
  */
 @Serializable
 data class GameProfile(
@@ -43,6 +44,7 @@ data class GameProfile(
     val touch: Boolean = true,
     val preferredCore: String? = null,
     val tested: String = "",
+    val walkthroughId: String? = null,
 ) {
     /** The game's name without the region/revision suffix, for prompts. */
     val shortTitle: String get() = title.substringBefore(" (").substringBefore(" -")

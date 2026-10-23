@@ -1,0 +1,56 @@
+{
+  "id": "age-of-empires-aok",
+  "provenance": "hand-written",
+  "chapters": [
+    {
+      "id": "aoe:start",
+      "title": "Start the campaign",
+      "goal": "Start the single-player campaign and get into the first mission.",
+      "hints": [
+        "The main menu is touch-driven: tap Single Player, then the campaign.",
+        "Each mission opens with a briefing; the objectives are listed there and in the pause menu.",
+        "The pause menu (START) is where you save and where the objectives are repeated."
+      ]
+    },
+    {
+      "id": "aoe:cursor",
+      "title": "Learn the controls",
+      "goal": "Get comfortable moving the cursor, selecting units and giving orders.",
+      "hints": [
+        "The D-pad pans the map and moves the cursor; A selects and confirms; B cancels.",
+        "L and R cycle between your units and buildings.",
+        "The touch screen can also select units: tapping a unit selects it, tapping the ground moves it."
+      ]
+    },
+    {
+      "id": "aoe:economy",
+      "title": "Build the economy",
+      "goal": "Get villagers gathering food, wood, gold and stone.",
+      "hints": [
+        "Train villagers at the Town Center: they are the units that gather.",
+        "Send villagers to the resource they are standing near: trees for wood, bushes and animals for food.",
+        "Keep producing villagers while you gather: an idle Town Center is wasted time."
+      ]
+    },
+    {
+      "id": "aoe:army",
+      "title": "Build an army",
+      "goal": "Build a military building, train units and use them for the mission's objective.",
+      "hints": [
+        "A Barracks trains infantry, an Archery Range archers, a Stable cavalry.",
+        "Upgrades at the buildings make units stronger for the rest of the mission.",
+        "Keep soldiers near the villagers: the mission usually attacks your base."
+      ]
+    },
+    {
+      "id": "aoe:mission",
+      "title": "Finish the mission",
+      "goal": "Complete the current mission's objectives and move to the next one.",
+      "hints": [
+        "Read the objectives again in the pause menu when it is unclear what is left.",
+        "Save before a big attack: missions are long and losses are permanent in the mission.",
+        "The mission ends when the objectives are done, not when the map is empty."
+      ]
+    }
+  ]
+}

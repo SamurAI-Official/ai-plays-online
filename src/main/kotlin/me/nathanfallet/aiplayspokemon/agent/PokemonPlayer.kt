@@ -23,6 +23,7 @@ import dev.kotlinds.pokemonclient.world.Area
 import me.nathanfallet.aiplayspokemon.agent.VisionVerifier
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.GameProfile
+import me.nathanfallet.aiplayspokemon.games.WalkthroughState
 import java.nio.file.Path
 import kotlin.random.Random
 
@@ -49,10 +50,13 @@ class PokemonPlayer(
     runsDirectory: Path?,
     /** The game's profile: the per-game objective and conventions the prompts carry. */
     private val profile: GameProfile = GameCatalog.generic,
+    /** The walkthrough in play, shared with the panel (chapters, hints, which one we are on). */
+    val walkthrough: WalkthroughState = WalkthroughState(),
     /** The stream's voice for decisions (null: silent). Asked per use, so toggling needs no new player. */
     private val narrator: () -> DecisionNarrator? = { null },
 ) {
-    val session = AgentSession(emulator, game, recorder, settings, profile)
+    val session = AgentSession(emulator, game, recorder, settings, profile, walkthrough)
+    private var lastChapter: String? = null
     private val settings get() = session.settings()
     private val emulator = emulator
     private val stats = RunStats(runsDirectory, "${model.name}${planner?.let { " + planner ${it.name}" } ?: ""}")
@@ -107,6 +111,18 @@ class PokemonPlayer(
     fun toggle() = if (state.value.playing) pause() else play()
 
     /** One full observe → decide → act → remember iteration. */
+    /**
+     * Records the walkthrough chapter the run is on, once per chapter: typed games advance from their own verified
+     * progress, screen-only games from a screen landmark or the panel. This is what makes runs of different games
+     * comparable at the chapter level.
+     */
+    private fun chapterMilestones(decisions: Int, presses: Int, inputTokens: Long, cost: Double): List<RunStats.Milestone> {
+        val chapter = walkthrough.chapter ?: return emptyList()
+        if (chapter.id == lastChapter) return emptyList()
+        lastChapter = chapter.id
+        return listOfNotNull(stats.chapterReached(chapter, decisions, presses, inputTokens, cost))
+    }
+
     private suspend fun step() {
         // Time only passes while the emulator runs: don't spend API calls on a game paused by the user.
         if (!emulator.status.value.running) {
@@ -188,7 +204,9 @@ class PokemonPlayer(
         val presses = session.actionsDone
         // Counted before the update (this loop is their only writer): the run's milestones, also said aloud as
         // they are reached — and checked once, where inside the update a retry of the copy could have run twice.
-        val reached = stats.check(report.after, state.value.decisions + 1, presses, inputTokens, cost)
+        val decisions = state.value.decisions + 1
+        val reached = stats.check(report.after, decisions, presses, inputTokens, cost) +
+            chapterMilestones(decisions, presses, inputTokens, cost)
         _state.update {
             it.copy(
                 lastDecision = decision,

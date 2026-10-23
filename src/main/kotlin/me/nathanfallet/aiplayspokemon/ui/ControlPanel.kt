@@ -82,6 +82,7 @@ fun ControlPanel(
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("AI plays Online", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         GameSelector(controller, currentRom, games, onSelectGame, onBrowse)
+        WalkthroughSection(controller)
         Text(
             "${controller.profile.shortTitle} · ${controller.emulator.info.name} · ${"%.0f".format(status.measuredFps)} fps",
             style = MaterialTheme.typography.bodySmall,
@@ -755,3 +756,120 @@ private fun agentLabel(agent: AgentKind): String = when (agent) {
     AgentKind.SCREEN -> "screen only"
 }
 
+
+
+/**
+ * The walkthrough of the game being played: which chapter the run is on, what it asks for, and its hints.
+ *
+ * The chapter is advanced by the game's own progress when it has a typed reader, by a screen landmark otherwise
+ * (see [ScreenWatcher]), and can always be pinned here — a human steering the run, or correcting a guess. The text
+ * is data (see `docs/walkthroughs.md`): shipped with the app, overridable in `<data>/walkthroughs/`.
+ */
+@Composable
+private fun WalkthroughSection(controller: AppController) {
+    val walkthrough by controller.walkthrough.walkthrough.collectAsState()
+    val chapterId by controller.walkthrough.chapterId.collectAsState()
+    var expanded by remember { mutableStateOf(false) }
+    var exported by remember { mutableStateOf<String?>(null) }
+    var autoAdvance by remember { mutableStateOf(controller.walkthrough.autoAdvance) }
+
+    val current = chapterId?.let { id -> walkthrough?.chapter(id) }
+    HorizontalDivider()
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Walkthrough", fontWeight = FontWeight.Bold)
+            if (walkthrough != null) {
+                Text(
+                    controller.walkthroughProvenance().orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        val data = walkthrough
+        if (data == null) {
+            Text(
+                "No walkthrough for this game yet. Add one in <data>/walkthroughs/ (see docs/walkthroughs.md): " +
+                    "chapters with a goal, hints, and optionally the screen each one happens on.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
+
+        if (current == null) {
+            Text(
+                "No chapter chosen yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            val index = data.chapters.indexOfFirst { it.id == current.id } + 1
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    OutlinedButton(onClick = { expanded = true }) {
+                        Text(
+                            "Chapter $index/${data.chapters.size}: ${current.title}",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        data.chapters.forEachIndexed { position, item ->
+                            DropdownMenuItem(
+                                text = { Text("${position + 1}. ${item.title}", style = MaterialTheme.typography.bodyMedium) },
+                                onClick = {
+                                    expanded = false
+                                    controller.selectChapter(item.id)
+                                },
+                            )
+                        }
+                    }
+                }
+                if (controller.walkthrough.reason.isNotBlank()) {
+                    Text(
+                        controller.walkthrough.reason,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(current.goal, style = MaterialTheme.typography.bodySmall)
+            current.hints.forEach { hint ->
+                Text(
+                    "• $hint",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (current.milestone != null) {
+                Text(
+                    "The app watches for this chapter's screen and moves on when it sees it.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = autoAdvance,
+                onClick = {
+                    autoAdvance = !autoAdvance
+                    controller.setWalkthroughAutoAdvance(autoAdvance)
+                },
+                label = { Text("Follow progress") },
+            )
+            OutlinedButton(onClick = { exported = controller.exportWalkthrough()?.toString() }) {
+                Text("Copy for editing")
+            }
+        }
+        exported?.let { path ->
+            Text(
+                "Written to $path",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

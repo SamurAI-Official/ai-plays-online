@@ -93,6 +93,26 @@ A profile tells the app how to treat a ROM, keyed by its game code:
 | `objective` | the per-game objective put in the prompt ("win the Grand Prix cups", "follow the story"...) |
 | `conventions` | the per-game prompt section on how the game behaves (controls, menus, saving, what is worth doing) |
 | `touch`, `preferredCore` | whether the stylus matters, and which core to start with |
+| `walkthroughId` | which walkthrough file to use (defaults to `id`) |
 
-Adding a game means adding a profile (built-in or a user override in `<data>/games.json`); full RAM support for a new
-game is a reader in [pokemon-client](https://github.com/kotlinds/pokemon-client).
+Adding a game means adding a profile (built-in or a user override in `<data>/games.json`) and a walkthrough
+(`<data>/walkthroughs/<id>.json`); full RAM support for a new game is a reader in
+[pokemon-client](https://github.com/kotlinds/pokemon-client).
+
+## Walkthroughs
+
+| Game | Chapters | Progress comes from | Landmark |
+|---|---|---|---|
+| Pokémon HeartGold | 12 (generated from its story table) | the game's own flags/vars, verified | n/a |
+| Pokémon Platinum | — | (needs its story table) | n/a |
+| Mario Kart DS | 7 | the front-end screen, then the panel | `dhash:0110011003c50200` (captured at frame 432, stable 871 frames) |
+| Final Fantasy III | 5 | the panel | — |
+| Final Fantasy IV | 5 | the panel | — |
+| Phantasy Star 0 | 6 | the title screen, then the panel | `dhash:2362248c00d82000` (frame 1035, 220 frames) |
+| Age of Empires: The Age of Kings | 5 | the panel | — |
+
+A landmark is a 64-bit difference hash of the screen, captured with `dev/FrameHashTool`
+(`./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.FrameHashToolKt -PdevArgs="rom.nds|2600|melonds"`),
+which prints the stable screens of a run with how long each lasted. The other chapters advance by hand from the panel
+until someone captures their screens; the format and the authoring steps are in
+[`docs/walkthroughs.md`](walkthroughs.md).

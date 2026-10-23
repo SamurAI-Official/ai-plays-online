@@ -4,10 +4,18 @@ import dev.kotlinds.pokemonclient.actions.ChainLimits
 import dev.kotlinds.pokemonclient.actions.ChainRunner
 import dev.kotlinds.pokemonclient.data.KnowledgeLevel
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
 import me.nathanfallet.aiplayspokemon.games.AgentKind
 import me.nathanfallet.aiplayspokemon.games.GameProfile
+import me.nathanfallet.aiplayspokemon.games.Walkthrough
+import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
+
+/** How many hints of the current chapter the prompt carries. */
+private const val MAX_HINTS = 6
 
 /**
  * Turns "what the player can perceive and remember" into a decision request.
@@ -32,7 +40,13 @@ object DecisionPrompt {
             "${ChainLimits.AGENT.idle.inWholeSeconds} s, or after ${ChainLimits.AGENT.total.inWholeSeconds} s in all. When the battle " +
             "ends, its battle options left are dropped (`dropped`, `dropped_code`) and the others go on."
 
-    private fun instructions(settings: PlayerSettings, planner: Boolean, profile: GameProfile, sequences: Boolean): String = buildString {
+    private fun instructions(
+        settings: PlayerSettings,
+        planner: Boolean,
+        profile: GameProfile,
+        walkthrough: Boolean,
+        sequences: Boolean,
+    ): String = buildString {
         append("You are playing ${profile.shortTitle} on a Nintendo DS. ")
         append(
             when (settings.mode) {
@@ -52,6 +66,11 @@ object DecisionPrompt {
             append("; your current goal and the goals blocked right now are in `memory.story` (clear the blockers before the blocked goals)")
         }
         append(". If your recent actions changed nothing, do something different.")
+        if (walkthrough) append(
+            " `walkthrough` is a human-written guide to this game's progression: follow its `goal` and `hints` " +
+                "while they match what you see, and ignore them when the game is somewhere else (a guide can be " +
+                "wrong about where you are).",
+        )
         if (sequences) append(" ").append(SEQUENCE_RULES)
         if (planner) append(" You are the planner: also write in `note` the goal and plan the fast decision model should follow next.")
     }
@@ -66,6 +85,10 @@ object DecisionPrompt {
         planner: Boolean = false,
         /** The game being played: names it in the prompt and carries its per-game conventions. */
         profile: GameProfile,
+        /** The walkthrough of this game, when it has one (see [WalkthroughCatalog]). */
+        walkthrough: Walkthrough? = null,
+        /** The chapter being played, when one is chosen. */
+        chapter: WalkthroughChapter? = null,
         /** Why the last movement step failed (blocked by a wall, a person...): shown once, then cleared. */
         previousMovementFailure: String? = null,
     ) = ChoiceRequest(
@@ -73,10 +96,28 @@ object DecisionPrompt {
             put("objective", objective)
             plannerGoal?.let { put("goal_from_planner", it) }
             previousMovementFailure?.let { put("previous_movement_failure", it) }
+            chapter?.let { current ->
+                putJsonObject("walkthrough") {
+                    put("chapter", current.title)
+                    put("goal", current.goal)
+                    if (current.hints.isNotEmpty()) {
+                        putJsonArray("hints") { current.hints.take(MAX_HINTS).forEach { add(JsonPrimitive(it)) } }
+                    }
+                    val index = walkthrough?.chapters?.indexOfFirst { it.id == current.id } ?: -1
+                    if (index >= 0) put("chapter_number", index + 1)
+                    if (index >= 0) put("chapters_total", walkthrough?.chapters?.size ?: 0)
+                }
+            }
             put("game", turn.state)
             put("memory", memory.describe(settings.exploredMap, turn.gameState.field))
         },
-        instructions = instructions(settings, planner, profile, sequences = generative && settings.allowSequences),
+        instructions = instructions(
+            settings,
+            planner,
+            profile,
+            walkthrough = walkthrough != null,
+            sequences = generative && settings.allowSequences,
+        ),
         options = turn.options.associate { it.key to it.description },
         allowSequence = generative && settings.allowSequences,
         reasoning = settings.reasoning,

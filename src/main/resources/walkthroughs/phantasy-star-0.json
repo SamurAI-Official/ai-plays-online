@@ -1,0 +1,72 @@
+{
+  "id": "phantasy-star-0",
+  "provenance": "hand-written",
+  "chapters": [
+    {
+      "id": "psz:boot",
+      "title": "Boot to the front end",
+      "goal": "Get past the boot and the intro to the game's front end (its title screen).",
+      "hints": [
+        "The intro plays by itself; START or A skips it.",
+        "The title screen is where a new game or a saved game is chosen."
+      ],
+      "milestone": {
+        "kind": "frameHash",
+        "hashes": ["dhash:2362248c00d82000", "dhash:2362248ce662a0a0"],
+        "threshold": 6,
+        "minStableChecks": 3
+      }
+    },
+    {
+      "id": "psz:start",
+      "title": "Create a character",
+      "goal": "Start a new game and create a character.",
+      "hints": [
+        "The title screen and the character creator are driven by the touch screen as well as the buttons.",
+        "Class and appearance can be changed on the creation screen; the choice only affects stats.",
+        "Name the character, then start the story."
+      ]
+    },
+    {
+      "id": "psz:town",
+      "title": "Learn the town",
+      "goal": "Walk around the town, talk to people and take the first quest.",
+      "hints": [
+        "Quests come from the quest counter and from people in town.",
+        "Shops sell weapons, armour and healing items: buy what you can afford before leaving.",
+        "The storage (bank) holds items you are not carrying."
+      ]
+    },
+    {
+      "id": "psz:first-field",
+      "title": "The first field",
+      "goal": "Get through the first field quest and come back to town.",
+      "hints": [
+        "A attacks the target in front of you; the D-pad moves.",
+        "Palette actions (healing, techniques) are used with B and the D-pad, or from the touch screen palette.",
+        "The touch screen shows the map and the enemy positions: use it to avoid being surrounded.",
+        "Return to town to heal, sell and save."
+      ]
+    },
+    {
+      "id": "psz:equipment",
+      "title": "Keep the character equipped",
+      "goal": "Upgrade the weapon and armour whenever the shops have something better.",
+      "hints": [
+        "Armour and a strong weapon matter more than level alone.",
+        "Sell what you do not need: inventory space is limited.",
+        "Keep a stack of healing items in the palette before a long field."
+      ]
+    },
+    {
+      "id": "psz:story",
+      "title": "Follow the story quests",
+      "goal": "Keep taking story quests and clearing the fields and dungeons they lead to.",
+      "hints": [
+        "Story quests are marked differently from the repeatable ones in the quest list.",
+        "Bosses appear at the end of a field: heal before you enter the room.",
+        "Save in town after every quest."
+      ]
+    }
+  ]
+}

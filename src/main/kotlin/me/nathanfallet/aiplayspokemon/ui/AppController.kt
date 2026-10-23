@@ -45,8 +45,12 @@ import me.nathanfallet.aiplayspokemon.decision.claudecode.ClaudeCodeDecisionMode
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmDecisionModel
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmProvider
 import me.nathanfallet.aiplayspokemon.decision.llm.OllamaModels
+import me.nathanfallet.aiplayspokemon.emulator.ScreenWatcher
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
+import java.nio.file.Path
 import me.nathanfallet.aiplayspokemon.games.GameProfile
+import me.nathanfallet.aiplayspokemon.games.WalkthroughState
+import me.nathanfallet.aiplayspokemon.games.WalkthroughCatalog
 
 /**
  * Glue between the UI and the rest of the app: owns the [PokemonPlayer], turns keyboard events into
@@ -171,7 +175,17 @@ class AppController(
     /** What an agent would get from the game right now ([GameSession.describe]), refreshed a few times per second. */
     val panel: StateFlow<PanelView?> = _panel.asStateFlow()
 
+    /**
+     * The walkthrough of this game and the chapter being played. Typed games advance it from their own verified
+     * progress; for the others the screen watcher or the panel does.
+     */
+    val walkthrough = WalkthroughState()
+
+    /** Watches the frame for the current chapter's landmark (screen-only games). */
+    val screenWatcher = ScreenWatcher()
+
     init {
+        walkthrough.load(WalkthroughCatalog.of(profile, config.dataDirectory))
         emulator.musicDuringPauses = _settings.value.musicDuringPausesSettings
         recorder?.let { r ->
             emulator.frameListener = r::onFrame
@@ -327,6 +341,23 @@ class AppController(
             DecisionBackend.MCP -> null
         }
 
+    /** Pins the chapter the run should work on (the panel's picker), or null to let the app choose. */
+    fun selectChapter(id: String?) {
+        walkthrough.select(id, "chosen in the panel")
+    }
+
+    /** Whether the app may advance the chapter on its own (typed progress or a screen landmark). */
+    fun setWalkthroughAutoAdvance(enabled: Boolean) {
+        walkthrough.autoAdvance = enabled
+    }
+
+    /** Copies the walkthrough of this game into `<data>/walkthroughs/`, to edit or translate it. Returns the file. */
+    fun exportWalkthrough(): Path? =
+        walkthrough.walkthrough.value?.let { WalkthroughCatalog.export(it.id, config.dataDirectory) }
+
+    /** Where the text of the current walkthrough came from, as a sentence for the panel. */
+    fun walkthroughProvenance(): String? = walkthrough.walkthrough.value?.let { WalkthroughCatalog.provenanceNote(it) }
+
     private fun createPlayer() {
         _player.value?.pause()
         val game = game
@@ -340,6 +371,7 @@ class AppController(
                 settings = { _settings.value },
                 runsDirectory = config.dataDirectory.resolve("runs"),
                 profile = profile,
+                walkthrough = walkthrough,
                 narrator = { narrator() },
             )
         } else null
@@ -380,7 +412,22 @@ class AppController(
         if (panelSession == null) return
         while (scope.isActive) {
             _panel.value = runCatching { withPanelSession { it.describeWithState() } }.getOrNull()?.let { (state, view) -> PanelView(StateView.summary(state), view) }
+            watchScreen()
             delay(250)
+        }
+    }
+
+    /**
+     * Looks at the frame the console just produced for the current chapter's landmark (a few times a second, see
+     * [refreshPanel]). When it matches, the chapter is reached and the walkthrough moves on — this is how a game we
+     * only see the screen of advances on its own. Typed games never get here (their own progress is exact).
+     */
+    private fun watchScreen() {
+        if (!walkthrough.autoAdvance) return
+        val chapter = walkthrough.chapter ?: return
+        if (chapter.milestone == null) return
+        if (screenWatcher.check(emulator.frames.value, chapter)) {
+            walkthrough.advance("seen on screen")
         }
     }
 
