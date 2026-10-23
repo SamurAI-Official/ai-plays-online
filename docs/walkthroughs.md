@@ -65,14 +65,43 @@ walkthrough into your data directory, ready to change; `provenance` in the file 
 
    ```bash
    ./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.FrameHashToolKt \
-     -PdevArgs="/path/to/game.nds|2600|melonds"
+     -PdevArgs="/path/to/game.nds|2600|desmume"
    ```
 
    It runs the game headless and prints the stable screens with their `dhash:…` reference and how long they lasted.
    Copy the hash of the screen you want (a title screen, a menu, a save prompt) into `hashes`. Use several references
-   when the screen animates, and raise `threshold` or `minStableChecks` if it fires on the wrong screen. Anything
-   deeper than the front end needs a savestate and inputs (the tool drives the game with no input today).
-4. Run the app: the panel shows the chapter, and **Follow progress** decides whether the app may advance it by itself.
+   when the screen animates, and raise `threshold` or `minStableChecks` if it fires on the wrong screen.
+4. For anything deeper than the front end, drive the game there while it records (`;` separates the steps, frame 0 is
+   the first frame of the run):
+
+   ```bash
+   ./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.FrameHashToolKt \
+     -PdevArgs="game.nds|3600|desmume|--png=/tmp/screens|--script=A@700-702;A@1000-1002;A@1300-1302"
+   ```
+
+   `--png=<dir>` writes one PNG per stable screen (`<frame>-<hash>.png`), so you can see what each hash is;
+   `--pngAt=1200` adds a specific frame. `--state=<file>` starts from a savestate instead of a cold boot. A touch is
+   `TOUCH:128,96@300-302` (pixels of the touch screen), buttons are `A@10-12`, `A+DOWN@20`, and `NONE@0-2000` holds
+   nothing for a while.
+
+   When the screen you want is not stable (an in-game view with a moving map, a HUD counter), do not landmark it:
+   hash a `region` that is stable instead (Age of Empires' menu is the bottom screen, `[0, 192, 256, 192]`), and check
+   how far the frames actually drift before choosing. Two screens 10+ bits apart will not match a `threshold` of 6.
+5. Verify before committing: `--check=<walkthrough id>` follows the walkthrough with the app's own watcher and prints
+   the frame each chapter's milestone fires on. It catches a landmark that fires too early (on an intro screen whose
+   coarse hash happens to match) as well as one that never fires:
+
+   ```bash
+   ./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.FrameHashToolKt \
+     -PdevArgs="game.nds|2200|desmume|--check=age-of-empires-aok|--script=A@700-702;A@1000-1002"
+   ```
+
+   ```text
+   chapter aoe:boot (Boot to the front end) reached at frame 436
+   chapter aoe:start (Start the campaign) reached at frame 1629
+   walkthrough age-of-empires-aok: no milestone fired for aoe:cursor, aoe:economy, aoe:army, aoe:mission
+   ```
+6. Run the app: the panel shows the chapter, and **Follow progress** decides whether the app may advance it by itself.
 
 ## What "verified" means
 

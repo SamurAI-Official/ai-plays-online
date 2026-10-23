@@ -3,14 +3,38 @@
   "provenance": "hand-written",
   "chapters": [
     {
+      "id": "aoe:boot",
+      "title": "Boot to the front end",
+      "goal": "Get past the logos and the intro to the game's main menu.",
+      "hints": [
+        "The game opens on the publisher logos and an intro; the main menu is up after about ten seconds.",
+        "The menu is button-driven: the D-pad moves the selection and A confirms (tapping works too).",
+        "The menu offers Single Player, Multiplayer, User Profile, Bonus Items, Library and Credits."
+      ],
+      "milestone": {
+        "kind": "frameHash",
+        "region": [0, 192, 256, 192],
+        "hashes": ["dhash:05d5c9ab8ae5552b"],
+        "threshold": 4,
+        "minStableChecks": 3
+      }
+    },
+    {
       "id": "aoe:start",
       "title": "Start the campaign",
       "goal": "Start the single-player campaign and get into the first mission.",
       "hints": [
-        "The main menu is touch-driven: tap Single Player, then the campaign.",
-        "Each mission opens with a briefing; the objectives are listed there and in the pause menu.",
-        "The pause menu (START) is where you save and where the objectives are repeated."
-      ]
+        "From the main menu: A on Single Player, then A on Campaign.",
+        "Then A on a campaign (Joan of Arc (Tutorial) is the one to learn on), A on its first mission, and A through the briefing pages.",
+        "The mission itself starts after the last briefing page; START opens the pause menu, where the objectives are repeated and the game saves."
+      ],
+      "milestone": {
+        "kind": "frameHash",
+        "region": [0, 0, 256, 192],
+        "hashes": ["dhash:9b3d2bcacce1a561"],
+        "threshold": 6,
+        "minStableChecks": 3
+      }
     },
     {
       "id": "aoe:cursor",

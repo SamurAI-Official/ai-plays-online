@@ -109,10 +109,16 @@ Adding a game means adding a profile (built-in or a user override in `<data>/gam
 | Final Fantasy III | 5 | the panel | — |
 | Final Fantasy IV | 5 | the panel | — |
 | Phantasy Star 0 | 6 | the title screen, then the panel | `dhash:2362248c00d82000` (frame 1035, 220 frames) |
-| Age of Empires: The Age of Kings | 5 | the panel | — |
+| Age of Empires: The Age of Kings | 6 | the front-end screen, then the mission briefing, then the panel | `dhash:05d5c9ab8ae5552b` (bottom screen, menu from frame ~400) and `dhash:9b3d2bcacce1a561` (briefing, top screen) |
 
 A landmark is a 64-bit difference hash of the screen, captured with `dev/FrameHashTool`
 (`./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.FrameHashToolKt -PdevArgs="rom.nds|2600|melonds"`),
-which prints the stable screens of a run with how long each lasted. The other chapters advance by hand from the panel
-until someone captures their screens; the format and the authoring steps are in
-[`docs/walkthroughs.md`](walkthroughs.md).
+which prints the stable screens of a run with how long each lasted. `--png=<dir>` writes a PNG per screen (to see
+what a hash is), `--script=` drives the game there (menus are behind a few presses), `--state=` starts from a
+savestate, and `--check=<id>` follows a walkthrough with the app's own watcher and prints the frame each chapter's
+milestone fires on. A hash is taken over the whole frame (both screens stacked, 256x384) or a `region` of it, which is
+what makes a landmark like Age of Empires' menu usable: its whole frame changes every second (animated art), while its
+bottom screen is pixel-identical for two thousand frames. Age of Empires' two landmarks were checked with `--check`
+on both cores: the menu fires at frame 434 (melonDS) / 436 (DeSmuME) and the briefing at 1628 / 1629. The other
+chapters advance by hand from the panel until someone captures their screens; the format and the authoring steps are
+in [`docs/walkthroughs.md`](walkthroughs.md).

@@ -113,7 +113,7 @@ of the same game still works (and may be untested).
 | Final Fantasy III | `AFFE` | screen only | 5 chapters, hints only | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
 | Final Fantasy IV | `YF4E` | screen only | 5 chapters, hints only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
 | Phantasy Star 0 | `C24E` | screen only | 6 chapters, front-end landmark captured | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
-| Age of Empires: The Age of Kings | `AEKE` | screen only | 5 chapters, hints only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Age of Empires: The Age of Kings | `AEKE` | screen only | 6 chapters, front-end + briefing landmarks | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
 
 All seven boot and run on both patched cores; 12 of the 14 game/core combinations pass a 600-frame save/load
 determinism check (the two that do not are melonDS's, and only for those two titles). The raw numbers — state size,
