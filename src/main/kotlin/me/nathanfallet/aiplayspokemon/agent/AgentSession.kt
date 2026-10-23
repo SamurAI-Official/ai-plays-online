@@ -47,6 +47,20 @@ class AgentSession(
     /** The last [act]'s answer, until the next turn's state carries it to the model ([UnreadAnswer]). */
     private val unread = UnreadAnswer()
 
+    /** Why the last movement step failed (blocked by a wall, a person...), shown once in the next prompt. */
+    @Volatile
+    var lastMovementFailure: String? = null
+        private set
+
+    /**
+     * Why a chosen movement was refused before it happened (the pre-commit vision gate: a wall, a person standing
+     * there, a message box open over the walk...): shown as `previous_movement_failure` in the next [request], read
+     * once, like an [act]'s bump.
+     */
+    fun movementBlocked(reason: String) {
+        lastMovementFailure = reason
+    }
+
     /** One possible action, as offered to models: a stable key and a description. */
     data class Option(val key: String, val description: String, val action: GameAction)
 
@@ -68,6 +82,9 @@ class AgentSession(
         val (gameState, fresh) = gameSession.describeWithState()
         val state = unread.into(fresh)
         memory.observeMap(gameState.field, area(gameState))
+        if (settings().knowledge.allows(dev.kotlinds.pokemonclient.data.KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)) {
+            memory.observeStory(StoryGoals.plan(gameState))
+        }
         val options = options(gameState).values.map { Option(it.key, describe(it, gameState.screen), it) }
         return Turn(gameState, state, options)
     }
@@ -84,6 +101,10 @@ class AgentSession(
         plannerGoal = plannerGoal.takeIf { settings().mode == ControlMode.HYBRID && !planner },
         planner = planner,
         gameName = game.name,
+        previousMovementFailure = lastMovementFailure?.let { failure ->
+            lastMovementFailure = null
+            failure.takeIf { it.isNotBlank() }
+        },
     )
 
     /**
@@ -108,6 +129,10 @@ class AgentSession(
         val answer = gameSession.act(steps, detail = AgentView.Detail.STANDARD) { action, outcome, after ->
             actionsDone++
             val problem = (outcome as? ActionOutcome.Failed)?.error?.message
+            // Remember a movement failure so it shows up in the next decision prompt, exactly once.
+            if (problem != null && (action is GameAction.Press || action is GameAction.Touch)) {
+                lastMovementFailure = problem
+            }
             memory.record(action.key, before, after, area(after), thought.takeIf { first }, problem)
             first = false
             before = after

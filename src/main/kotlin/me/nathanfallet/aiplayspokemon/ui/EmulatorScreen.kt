@@ -52,11 +52,22 @@ fun EmulatorScreen(emulator: Emulator, modifier: Modifier = Modifier) {
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent()
-                            val position = event.changes.first().position
+                            // Leaving the screen (for the panel, out of the window): a release made outside never
+                            // reaches us, so the touch is lifted here. Left down, the game would keep being touched
+                            // and the agent refused as "human driving" forever (and a release outside the window
+                            // would send no event at all).
+                            if (event.type == PointerEventType.Exit) {
+                                emulator.touch(null)
+                                continue
+                            }
                             val pressed = event.buttons.isPrimaryPressed &&
                                 event.type in setOf(PointerEventType.Press, PointerEventType.Move)
+                            // Enter/Exit events may carry no position: with no change there is nothing to touch
+                            // (a bare `first()` would also kill this handler for good).
+                            val position = if (pressed) event.changes.firstOrNull()?.position else null
                             emulator.touch(
-                                if (pressed) (position.x / size.width).coerceIn(0f, 1f) to (position.y / size.height).coerceIn(0f, 1f)
+                                if (position != null)
+                                    (position.x / size.width).coerceIn(0f, 1f) to (position.y / size.height).coerceIn(0f, 1f)
                                 else null
                             )
                         }

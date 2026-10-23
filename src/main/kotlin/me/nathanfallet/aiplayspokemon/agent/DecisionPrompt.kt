@@ -28,6 +28,10 @@ object DecisionPrompt {
             "a message box must be advanced with A until it closes. B cancels and backs out of menus and screens. " +
             "Walking onto stairs, doors and ladders (exits) takes you to another place; for exit mats at the edge " +
             "of a room, stand on them and press towards the edge. People walk around and block the way. " +
+            "If `previous_movement_failure` is set, your last move was refused with the reason given: don't do it that " +
+            "way again (a wall means another direction, a message box means advance it with A). " +
+            "If a way is blocked or you bump into the same wall twice, do not press that direction again: " +
+            "re-read the exits and people around you in `game` and go to one with go_to or interact. " +
             "PCs, TVs and bookshelves are optional; the story moves forward by talking to people and going to new places."
 
     /**
@@ -59,6 +63,7 @@ object DecisionPrompt {
         append(CONVENTIONS)
         append(" Choose the next option that makes the most progress towards `objective`")
         if (settings.knowledge.allows(KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)) append(" and `game.story_goals` (when there are several open goals, any of them)")
+        if (settings.knowledge.allows(KnowledgeLevel.POKEDEX_PLUS_WALKTHROUGH)) append("; your current goal and the goals blocked right now are in `memory.story` (clear the blockers before the blocked goals)")
         append(". If your recent actions changed nothing, do something different.")
         if (sequences) append(" ").append(SEQUENCE_RULES)
         if (planner) append(" You are the planner: also write in `note` the goal and plan the fast decision model should follow next.")
@@ -74,10 +79,13 @@ object DecisionPrompt {
         planner: Boolean = false,
         /** The game being played (the detected ROM's name): the prompt names it, whatever the game. */
         gameName: String,
+        /** Why the last movement step failed (blocked by a wall, a person...): shown once, then cleared. */
+        previousMovementFailure: String? = null,
     ) = ChoiceRequest(
         state = buildJsonObject {
             put("objective", objective)
             plannerGoal?.let { put("goal_from_planner", it) }
+            previousMovementFailure?.let { put("previous_movement_failure", it) }
             put("game", turn.state)
             put("memory", memory.describe(settings.exploredMap, turn.gameState.field))
         },

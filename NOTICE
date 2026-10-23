@@ -1,0 +1,51 @@
+AI plays Online
+Copyright 2026 SamurAI-Official
+
+This project puts an AI in front of a Nintendo DS game on a libretro emulator core and lets it
+play, live. It is an orchestration and optimization layer over the projects we compiled, patched and
+tested, not a replacement for any of them.
+
+No game data is included or distributed. You must provide your own ROMs, dumped from cartridges you
+own; nothing here downloads, links to, or bundles a ROM, a BIOS or DS firmware.
+
+---------------------------------------------------------------------------------------------------
+Upstream and third-party components
+---------------------------------------------------------------------------------------------------
+
+ai-plays-pokemon (https://github.com/kotlinds/ai-plays-pokemon)
+  The application this repository is a fork of. It ships no license file, so all rights remain with
+  its author; our fork keeps its code as-is and adds the changes listed in the git history. If you
+  need a clear license for the upstream code, ask upstream to add one.
+
+pokemon-client (https://github.com/kotlinds/pokemon-client) - Apache License 2.0
+  Reads a Pokémon game from its RAM and ROM into one typed model, and plays it through typed,
+  self-checking actions. Our fork adds the rollback bridge (pokemon-client-rollback).
+
+libretro-kmp (https://github.com/kotlinds/libretro-kmp) - Apache License 2.0
+  Kotlin Multiplatform frontend for libretro cores. Our fork adds buffer serialization, buffered
+  memory reads, dirty-page reads and frontend-routed local wireless.
+
+melonDS (https://github.com/libretro/melonDS) - GNU GPL v3
+DeSmuME (https://github.com/libretro/desmume) - GNU GPL v2
+  The two Nintendo DS cores. We do not redistribute them: the app downloads the core it needs, and
+  the patches we apply for determinism (fixed RTC), delta snapshots (dirty pages) and two-console
+  play (frontend-routed local wireless) live in
+  https://github.com/SamurAI-Official/libretro-rollback under docs/patches, with the build
+  instructions and the pinned hashes of the builds we tested.
+
+libretro-rollback (https://github.com/SamurAI-Official/libretro-rollback) - Apache License 2.0
+  The rollback netcode engine, vendored here under engine/libretro-rollback. It is an independent
+  Kotlin implementation of the GGPO algorithm: GGPO itself is MIT-licensed, developed by
+  GroundStorm Studios, LLC (https://github.com/pond3r/ggpo), and its license is reproduced in that
+  repository as LICENSE-GGPO.
+
+Koog (https://github.com/JetBrains/koog) - Apache License 2.0
+  LLM and agent clients (OpenAI, Anthropic, OpenRouter, Ollama).
+
+Compose Multiplatform, Kotlin, kotlinx (https://github.com/JetBrains) - Apache License 2.0
+
+Model Context Protocol Kotlin SDK (https://github.com/modelcontextprotocol/kotlin-sdk) - MIT
+Ktor (https://github.com/ktorio/ktor) - Apache License 2.0
+
+Jev / TypeSafe (https://docs.typesafe.ai) is an optional hosted decision model; using it requires
+your own account and API key. Claude Code is used through the user's own installation and login.

@@ -19,7 +19,7 @@ import kotlin.io.path.outputStream
  *
  * | Setting               | Environment variable                    | Config key              |
  * |-----------------------|-----------------------------------------|-------------------------|
- * | ROM                   | `POKEMON_ROM` (or first argument)       | `rom`                   |
+ * | ROM                   | `AI_PLAYS_ONLINE_ROM` (or `POKEMON_ROM`, or first argument) | `rom`                   |
  * | Decision model        | `DECISION_BACKEND` (`mcp` / `llm` / `jev`) | `backend` (mcp)      |
  * | Jev API key           | `TYPESAFE_API_KEY`                      | `typesafe.apiKey`       |
  * | Jev model             | `JEV_MODEL`                             | `typesafe.model`        |
@@ -32,9 +32,12 @@ import kotlin.io.path.outputStream
  * | Start muted           | `START_MUTED` (`true` / `false`)        | `start.muted`           |
  * | Save state at launch  | `START_STATE` (slot number)             | `start.state`           |
  * | LLM API key           | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` | `llm.<provider>.apiKey` |
+ * | LLM base URL          | `OPENAI_BASE_URL`                                           | `llm.openai.baseUrl`    |
+ * | Narration voice / rate| `NARRATION_VOICE` / `NARRATION_RATE`                         | `narration.voice` / `narration.rate` |
  *
  * Everything the app writes (config, downloaded cores, in-game saves, save states) lives in
- * [dataDirectory], `~/.ai-plays-pokemon` by default (`AI_PLAYS_POKEMON_DATA_DIR` to change it).
+ * [dataDirectory], `~/.ai-plays-online` by default (`AI_PLAYS_ONLINE_DATA_DIR` to change it; the old
+ * `AI_PLAYS_POKEMON_DATA_DIR` and `~/.ai-plays-pokemon` still work).
  */
 class AppConfig(
     val dataDirectory: Path,
@@ -80,7 +83,15 @@ class AppConfig(
 
     fun llmApiKey(provider: LlmProvider): String? = setting(provider.apiKeyVariable, "llm.${provider.key}.apiKey")
 
+    /** Base URL for OpenAI-compatible endpoints (e.g. LM Studio). Null = Koog default (api.openai.com). */
+    val openAiBaseUrl: String? get() = setting("OPENAI_BASE_URL", "llm.openai.baseUrl")
+
+    /** Base URL of Ollama's OpenAI-compatible API: decisions reach it through our client like any other endpoint. */
+    val ollamaBaseUrl: String get() = setting("OLLAMA_BASE_URL", "llm.ollama.baseUrl") ?: "http://localhost:11434/v1"
+
     fun saveLlmApiKey(provider: LlmProvider, key: String) = save("llm.${provider.key}.apiKey", key)
+
+    fun saveLlmBaseUrl(url: String?) = save("llm.openai.baseUrl", url)
 
     // endregion
 
@@ -90,6 +101,16 @@ class AppConfig(
             ?.let { runCatching { settingsJson.decodeFromString(PlayerSettings.serializer(), it) }.getOrNull() }
             ?: PlayerSettings()
         set(value) = save("player.settings", settingsJson.encodeToString(PlayerSettings.serializer(), value))
+
+    /** The macOS `say` voice speaking decisions (see `DecisionNarrator.installedVoices`). */
+    var narrationVoice: String
+        get() = setting("NARRATION_VOICE", "narration.voice") ?: "Whisper"
+        set(value) = save("narration.voice", value)
+
+    /** Words per minute of the narration voice (macOS `say` defaults to 175). */
+    var narrationRate: Int
+        get() = setting("NARRATION_RATE", "narration.rate")?.toIntOrNull() ?: 185
+        set(value) = save("narration.rate", value.toString())
 
     /** Port of the MCP server (external agents play through it). */
     var mcpPort: Int
@@ -126,12 +147,23 @@ class AppConfig(
         private val settingsJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
         fun load(args: Array<String>): AppConfig {
-            val dataDirectory = System.getenv("AI_PLAYS_POKEMON_DATA_DIR")?.let(Path::of)
-                ?: Path.of(System.getProperty("user.home"), ".ai-plays-pokemon")
+            // The app used to be Pokémon-only: keep reading the old data directory when the new one
+            // does not exist yet, so existing cores, saves and settings are not lost on upgrade.
+            val dataDirectory = System.getenv("AI_PLAYS_ONLINE_DATA_DIR")?.let(Path::of)
+                ?: System.getenv("AI_PLAYS_POKEMON_DATA_DIR")?.let(Path::of)
+                ?: run {
+                    val home = Path.of(System.getProperty("user.home"))
+                    val current = home.resolve(".ai-plays-online")
+                    val legacy = home.resolve(".ai-plays-pokemon")
+                    if (current.exists() || !legacy.exists()) current else legacy
+                }
             val properties = Properties()
             dataDirectory.resolve(CONFIG_FILE).takeIf { it.exists() }?.inputStream()?.use(properties::load)
 
-            val rom = args.firstOrNull() ?: System.getenv("POKEMON_ROM") ?: properties.getProperty("rom")
+            val rom = args.firstOrNull()
+                ?: System.getenv("AI_PLAYS_ONLINE_ROM")
+                ?: System.getenv("POKEMON_ROM")
+                ?: properties.getProperty("rom")
             return AppConfig(dataDirectory, properties, rom?.let(Path::of)?.takeIf { it.exists() })
         }
     }

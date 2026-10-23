@@ -24,7 +24,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -38,7 +41,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.JsonObject
 import me.nathanfallet.aiplayspokemon.agent.Decision
+import me.nathanfallet.aiplayspokemon.agent.DecisionNarrator
 import me.nathanfallet.aiplayspokemon.agent.ControlMode
 import me.nathanfallet.aiplayspokemon.agent.PlayerSettings
 import me.nathanfallet.aiplayspokemon.agent.PlayerState
@@ -67,7 +70,7 @@ fun ControlPanel(controller: AppController, modifier: Modifier = Modifier) {
     val panel by controller.panel.collectAsState()
 
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("AI plays Pokémon", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("AI plays Online", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
             "${controller.game?.name ?: "Unsupported game"} · ${controller.emulator.info.name} · ${"%.0f".format(status.measuredFps)} fps",
             style = MaterialTheme.typography.bodySmall,
@@ -89,7 +92,11 @@ fun ControlPanel(controller: AppController, modifier: Modifier = Modifier) {
             )
             MusicDuringPausesChip(controller)
             WaitForSongChangeChip(controller)
+            NarrationChip(controller)
         }
+
+        InputDebugSection(controller)
+        NarrationReadout(controller)
 
         // Which AI plays: Jev, or an LLM (provider + model)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -152,11 +159,60 @@ private fun WaitForSongChangeChip(controller: AppController) {
     )
 }
 
+/**
+ * "Narrate decisions": the app speaks every decision aloud — the stream's voice for the agent, saying its number,
+ * confidence, what it does and why (see [DecisionNarrator]).
+ *
+ * [NarrationControl] owns the switch: the explicit on/off toggle (the chip and the Switch) turns speech on and off
+ * independently of the voice, while the dropdown below picks the voice that the narrator uses from the next line on.
+ * "Off" stops the speech, and turning the toggle off cuts the current utterance mid-sentence.
+ */
+@Composable
+private fun NarrationChip(controller: AppController) {
+    val settings by controller.settings.collectAsState()
+    val voice by controller.narrationVoice.collectAsState()
+    val voices = remember { DecisionNarrator.installedVoices() }
+        .sortedWith(compareByDescending<String> { it == DecisionNarrator.DEFAULT_VOICE }.thenBy { it })
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        var toggledOn by remember { mutableStateOf(settings.narration) }
+        FilterChip(
+            selected = toggledOn,
+            onClick = { controller.setNarrationEnabled(!toggledOn); toggledOn = !toggledOn },
+            label = { Text(if (toggledOn) "Narrating: $voice" else "Narrate decisions: off") },
+        )
+        Spacer(Modifier.width(8.dp))
+        Switch(
+            checked = toggledOn,
+            onCheckedChange = { controller.setNarrationEnabled(it); toggledOn = it },
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Off") },
+                onClick = {
+                    controller.setNarrationVoice(null)
+                    expanded = false
+                },
+            )
+            voices.forEach { installed ->
+                DropdownMenuItem(
+                    text = { Text(installed) },
+                    onClick = {
+                        controller.setNarrationVoice(installed)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
 /** Provider chips and model id for the LLM backend. */
 @Composable
 private fun LlmSelector(controller: AppController) {
     val llm by controller.llm.collectAsState()
     var model by remember(llm) { mutableStateOf(llm.model) }
+    var baseUrl by remember(llm) { mutableStateOf(controller.openAiBaseUrl.value.orEmpty()) }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LlmProvider.entries.forEach { provider ->
             FilterChip(
@@ -177,6 +233,62 @@ private fun LlmSelector(controller: AppController) {
         )
         OutlinedButton(onClick = { controller.setLlmModel(model) }, enabled = model.isNotBlank() && model != llm.model) {
             Text("Use")
+        }
+    }
+    if (llm.provider == LlmProvider.OPENAI) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = { baseUrl = it },
+                label = { Text("Base URL (OpenAI-compatible, e.g. LM Studio)") },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedButton(onClick = { controller.setLlmBaseUrl(baseUrl.takeIf { it.isNotBlank() }) }, enabled = baseUrl.isNotBlank()) {
+                Text("Use")
+            }
+        }
+    }
+    if (llm.provider == LlmProvider.OLLAMA) {
+        val models by controller.ollamaModels.collectAsState()
+        val loading by controller.ollamaModelsLoading.collectAsState()
+        val error by controller.ollamaModelsError.collectAsState()
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { controller.refreshOllamaModels() },
+                enabled = !loading,
+            ) {
+                Text(if (loading) "Refreshing…" else "Refresh models")
+            }
+            Text(
+                text = error ?: when {
+                    models.isEmpty() && !loading -> "No Ollama models found (is Ollama running?)"
+                    else -> "${models.size} model${if (models.size != 1) "s" else ""} available"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (models.isNotEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text("Installed Ollama models", style = MaterialTheme.typography.labelSmall)
+                    LazyColumn(
+                        modifier = Modifier.height(150.dp).verticalScroll(rememberScrollState()),
+                    ) {
+                        items(items = models, key = { it }) { m ->
+                            TextButton(
+                                onClick = {
+                                    model = m
+                                    controller.setLlmModel(m)
+                                },
+                            ) {
+                                Text(m, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     if (llm.provider == LlmProvider.OLLAMA || llm.provider == LlmProvider.CLAUDE_CODE) FilterChip(
@@ -319,10 +431,71 @@ private fun Stats(state: PlayerState) {
         Stat("Decisions", state.decisions.toString())
         Stat("Presses", state.presses.toString())
         Stat("Avg latency", "${state.averageLatencyMillis} ms")
-        Stat("Tokens", state.inputTokens.toString())
+        Stat("Tokens in/out", "${state.inputTokens}/${state.outputTokens}")
         if (state.costUsd > 0) Stat("Cost", "$" + "%.2f".format(state.costUsd))
     }
 }
+
+/**
+ * Debug: what the human holds right now, where they touch, and the last input / system changes (keys, touch, who
+ * drives the console, pauses, save states) — how a stuck input ("why is the agent refused / waiting?") becomes
+ * visible: a key held since a focus loss, a touch that never released, and what the game was doing meanwhile.
+ */
+@Composable
+private fun InputDebugSection(controller: AppController) {
+    val held by controller.emulator.heldButtons.collectAsState()
+    val touching by controller.emulator.touching.collectAsState()
+    val log by controller.emulator.systemLog.entries.collectAsState()
+    Text("Input debug", fontWeight = FontWeight.Bold)
+    Text(
+        "Held: " + held.joinToString { it.name.lowercase() }.ifEmpty { "none" } +
+            " · Touch: " + (touching?.let { "${it.x},${it.y}" } ?: "up"),
+        style = MaterialTheme.typography.bodySmall,
+    )
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth().height(INPUT_LOG_HEIGHT),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        items(log) { entry ->
+            Text(
+                entry,
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** How much of the panel the input log takes (its own scroll, newest first). */
+private val INPUT_LOG_HEIGHT = 120.dp
+
+/**
+ * What the narrator said, newest first: the lines the voice actually got, with the voice that read them. It is the
+ * check that a decision really was read out (the log alone only says a line was handed over).
+ */
+@Composable
+private fun NarrationReadout(controller: AppController) {
+    val spoken by controller.spoken.collectAsState()
+    if (spoken.isEmpty()) return
+    Text("Spoken", fontWeight = FontWeight.Bold)
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth().height(SPOKEN_HEIGHT),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        items(spoken) { line ->
+            Text(
+                line,
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** How much of the panel the spoken lines take (their own scroll, newest first). */
+private val SPOKEN_HEIGHT = 100.dp
 
 /** Lets an external agent (Claude Code...) play through MCP instead of our own loop. */
 @Composable
@@ -333,14 +506,7 @@ private fun McpSection(controller: AppController) {
         fontWeight = FontWeight.Bold,
     )
     val driver by controller.emulator.driver.collectAsState()
-    Text(
-        "Driving the game: " + when (val d = driver) {
-            is ConsoleHost.Driver.Agent -> "agent (${d.label})"
-            ConsoleHost.Driver.Human -> "you / free run"
-            ConsoleHost.Driver.Idle -> "nobody (paused)"
-        },
-        style = MaterialTheme.typography.bodySmall,
-    )
+    Text("Driving the game: ${driver.description}", style = MaterialTheme.typography.bodySmall)
     var port by remember { mutableStateOf(controller.mcpPort.toString()) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text("MCP port") }, singleLine = true, modifier = Modifier.width(120.dp))

@@ -1,0 +1,3 @@
+[submodule "engine/libretro-rollback"]
+	path = engine/libretro-rollback
+	url = https://github.com/SamurAI-Official/libretro-rollback.git

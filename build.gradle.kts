@@ -55,10 +55,10 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "me.nathanfallet.aiplayspokemon.MainKt"
-        if (System.getProperty("os.name").startsWith("Mac")) jvmArgs += listOf("-Xdock:name=AI plays Pokémon")
+        if (System.getProperty("os.name").startsWith("Mac")) jvmArgs += listOf("-Xdock:name=AI plays Online")
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "AI Plays Pokemon"
+            packageName = "AI Plays Online"
             packageVersion = "1.0.0"
         }
     }
@@ -75,3 +75,24 @@ tasks.register<JavaExec>("devRun") {
     mainClass = providers.gradleProperty("devMain")
     args = providers.gradleProperty("devArgs").map { it.split("|") }.getOrElse(emptyList())
 }
+
+// Headless probe: verifies config/ROM/env routing + core resolution WITHOUT starting the UI.
+// Usage:
+//   ./gradlew probe --args="--rom /path/to/rom.nds"
+tasks.register<JavaExec>("probe") {
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass = "me.nathanfallet.aiplayspokemon.dev.AppConfigProbeKt"
+    args = providers.gradleProperty("probeArgs").map { it.split("\\|") }.getOrElse(emptyList())
+}
+
+
+// Launcher helper: run the app directly as a Java daemon with the full runtime classpath.
+// Use: ./gradlew startApp -PappArgs="/path/to/rom.nds" [-Dkey=val ...]
+tasks.register<JavaExec>("startApp") {
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass = "me.nathanfallet.aiplayspokemon.MainKt"
+    args = providers.gradleProperty("appArgs").map { it.split("\\|") }.getOrElse(listOf())
+    jvmArgs = providers.gradleProperty("appJvmArgs").map { it.split("\\|") }.getOrElse(listOf())
+}
+
+

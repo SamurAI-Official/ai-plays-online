@@ -97,4 +97,37 @@ class AgentMemoryTest {
         assertTrue("A you" in howToRead && "E exit" in howToRead, howToRead)
         assertTrue(memory.describe(false, null)["explored_map"] == null)
     }
+
+    @Test
+    fun `blocked tiles show in the explored map`() {
+        val memory = AgentMemory()
+        val floor = TileInfo(blocked = false, kind = TileKind.Floor)
+        val room = Area(1, "room", 0, 0, 3, 3, Array(9) { floor })
+        memory.observeMap(at(1, 1).field, room)
+        memory.noteBlocked(1, VisionVerifier.Point(1, 0), "blocked by wall (Wall)")
+        val explored = memory.describe(true, at(1, 1).field)["explored_map"]!!.jsonObject
+        val rows = explored["rows"]!!.jsonArray.map { it.jsonPrimitive.content }
+        // The player faces south, so MapView.player draws 'V' there ('A' only when facing north).
+        assertEquals(listOf("y  0 .x.", "y  1 .V.", "y  2 ..."), rows)
+        val blocked = explored["blocked_tiles"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("(1, 0): blocked by wall (Wall)"), blocked)
+        val howToRead = explored["how_to_read"]!!.jsonPrimitive.content
+        assertTrue("x blocked" in howToRead, howToRead)
+    }
+
+    @Test
+    fun `a walked tile stays walked and blocked tiles stay on their own map`() {
+        val memory = AgentMemory()
+        val floor = TileInfo(blocked = false, kind = TileKind.Floor)
+        val room = Area(1, "room", 0, 0, 3, 3, Array(9) { floor })
+        memory.observeMap(at(1, 1).field, room)
+        memory.observeMap(at(1, 0).field, room) // walked on (1, 0) before it got blocked
+        memory.noteBlocked(1, VisionVerifier.Point(1, 0), "blocked by a person")
+        memory.noteBlocked(2, VisionVerifier.Point(0, 0), "blocked by wall (Wall)") // another map
+        val explored = memory.describe(true, at(1, 1).field)["explored_map"]!!.jsonObject
+        val rows = explored["rows"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("y  0 .o.", "y  1 .V.", "y  2 ..."), rows)
+        val blocked = explored["blocked_tiles"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("(1, 0): blocked by a person"), blocked)
+    }
 }

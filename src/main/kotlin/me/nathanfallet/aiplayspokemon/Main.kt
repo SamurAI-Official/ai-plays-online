@@ -2,6 +2,7 @@ package me.nathanfallet.aiplayspokemon
 
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
 import kotlin.io.path.readBytes
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.DpSize
@@ -18,6 +19,8 @@ import me.nathanfallet.aiplayspokemon.ui.App
 import me.nathanfallet.aiplayspokemon.ui.AppController
 import java.awt.FileDialog
 import java.awt.Frame
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 import java.nio.file.Path
 
 /**
@@ -49,10 +52,19 @@ fun main(args: Array<String>) {
                 emulator.close() // unloads the game, which writes the in-game save to disk
                 exitApplication()
             },
-            title = "AI plays Pokémon",
+            title = "AI plays Online",
             state = windowState,
             onKeyEvent = controller::onKeyEvent,
         ) {
+            // Focus loss while a key is held: its release never arrives (it goes to the other app), which would keep
+            // the button pressed forever — and a held key keeps every agent action refused as "human driving".
+            DisposableEffect(window) {
+                val listener = object : WindowAdapter() {
+                    override fun windowLostFocus(event: WindowEvent) = controller.onFocusLost()
+                }
+                window.addWindowFocusListener(listener)
+                onDispose { window.removeWindowFocusListener(listener) }
+            }
             App(controller, windowState)
         }
     }
@@ -60,7 +72,7 @@ fun main(args: Array<String>) {
 
 /** Asks for a ROM with the native file picker (the choice is remembered in the config file). */
 private fun chooseRom(): Path? {
-    val dialog = FileDialog(null as Frame?, "Choose a Pokémon ROM (.nds)", FileDialog.LOAD)
+    val dialog = FileDialog(null as Frame?, "Choose a Nintendo DS ROM (.nds)", FileDialog.LOAD)
     dialog.setFilenameFilter { _, name -> name.endsWith(".nds", ignoreCase = true) }
     dialog.isVisible = true
     val file = dialog.file ?: return null

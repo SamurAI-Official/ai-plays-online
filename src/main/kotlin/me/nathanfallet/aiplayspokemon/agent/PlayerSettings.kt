@@ -67,6 +67,12 @@ data class PlayerSettings(
      * on meanwhile), so the music doesn't jump back to the old song at resume. Off: the pause starts at once (to compare).
      */
     val waitForSongChange: Boolean = true,
+    /**
+     * Speak each decision aloud (macOS `say`, the voice and rate in `narration.voice` / `narration.rate` of the
+     * config): the stream's voice for the agent — the decision's number, confidence, what it does and why, read
+     * from the reasoning it wrote. Off by default: the voice is for broadcasting the run.
+     */
+    val narration: Boolean = false,
 ) {
     /**
      * What these settings let an agent know and do, as the library reads it: the one options object every session

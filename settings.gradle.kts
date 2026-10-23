@@ -1,4 +1,4 @@
-rootProject.name = "ai-plays-pokemon"
+rootProject.name = "ai-plays-online"
 
 pluginManagement {
     repositories {

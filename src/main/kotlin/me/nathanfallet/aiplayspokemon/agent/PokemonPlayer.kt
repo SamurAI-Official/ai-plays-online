@@ -17,7 +17,10 @@ import me.nathanfallet.aiplayspokemon.decision.DecisionException
 import me.nathanfallet.aiplayspokemon.decision.DecisionModel
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import dev.kotlinds.pokemonclient.PokemonGame
+import dev.kotlinds.pokemonclient.actions.GameAction
 import dev.kotlinds.pokemonclient.state.GameState
+import dev.kotlinds.pokemonclient.world.Area
+import me.nathanfallet.aiplayspokemon.agent.VisionVerifier
 import java.nio.file.Path
 import kotlin.random.Random
 
@@ -35,13 +38,15 @@ import kotlin.random.Random
  */
 class PokemonPlayer(
     emulator: ConsoleHost,
-    game: PokemonGame,
+    private val game: PokemonGame,
     recorder: Recorder,
     val model: DecisionModel,
     private val planner: DecisionModel?,
     private val scope: CoroutineScope,
     settings: () -> PlayerSettings,
     runsDirectory: Path?,
+    /** The stream's voice for decisions (null: silent). Asked per use, so toggling needs no new player. */
+    private val narrator: () -> DecisionNarrator? = { null },
 ) {
     val session = AgentSession(emulator, game, recorder, settings)
     private val settings get() = session.settings()
@@ -75,6 +80,7 @@ class PokemonPlayer(
                         // Errors that won't fix themselves (bad API key, invalid request) stop the loop.
                         if (error is DecisionException && !error.retryable) throw error
                         _state.update { it.copy(error = error.message ?: error.toString()) }
+                        narrator()?.narrateError(error.message ?: error.toString())
                         delay(2_000)
                     }
                 }
@@ -82,6 +88,7 @@ class PokemonPlayer(
                 throw cancellation
             } catch (error: Exception) {
                 _state.update { it.copy(error = error.message ?: error.toString()) }
+                narrator()?.narrateError(error.message ?: error.toString())
             } finally {
                 _state.update { it.copy(playing = false, thinking = false) }
             }
@@ -104,52 +111,178 @@ class PokemonPlayer(
         }
         val turn = session.prepare()
         if (state.value.decisions == 0) stats.start(turn.gameState)
+        val area = areaOf(game, turn.gameState)
+        // One thinking (game frozen) for the whole decide → verify loop: a refused movement is fed back as
+        // `previous_movement_failure` and re-asked within the same thinking, not on the next turn.
         val startedAt = System.nanoTime()
-        val (result, byPlanner) = session.thinking {
+        val gated = session.thinking {
             _state.update { it.copy(thinking = true) }
             try {
-                decide(turn)
+                decideGated(turn, area)
             } finally {
                 _state.update { it.copy(thinking = false) }
             }
         }
         val latencyMillis = (System.nanoTime() - startedAt) / 1_000_000
-        val chosenId = pick(result)
-        val choice = turn.resolve(chosenId)
-            ?: throw DecisionException("${model.name} chose '$chosenId', which isn't an option now", retryable = true)
-        if (byPlanner) result.note?.let { session.plannerGoal = it }
+        val inputTokens = state.value.inputTokens + gated.inputTokens
+        val outputTokens = state.value.outputTokens + gated.outputTokens
+        val cost = state.value.costUsd + gated.costUsd
 
-        val report = session.act(turn, choice, if (chosenId == result.choice) result.then else emptyList(), result.thought, result.note)
+        val committed = when (gated) {
+            // Pre-commit vision: a refused movement never reaches the console. Its decision is recorded with the
+            // stop reason (and, for a wall or a person, the tile remembered as blocked), so the model picks another
+            // action instead.
+            is Gated.Refused -> {
+                val decision = Decision(
+                    number = state.value.decisions + 1,
+                    state = turn.gameState,
+                    actions = listOf(gated.blocked.action),
+                    confidence = gated.result.confidence,
+                    probabilities = gated.result.probabilities.entries.sortedByDescending { it.value }.map { it.key to it.value },
+                    latencyMillis = latencyMillis,
+                    model = gated.result.model,
+                    thought = gated.result.thought,
+                    note = gated.result.note,
+                    byPlanner = gated.byPlanner,
+                    problem = null,
+                    stop = gated.blocked.describe(),
+                )
+                _state.update {
+                    it.copy(
+                        lastDecision = decision,
+                        history = (listOf(decision) + it.history).take(HISTORY_SIZE),
+                        decisions = it.decisions + 1,
+                        inputTokens = inputTokens,
+                        outputTokens = outputTokens,
+                        costUsd = cost,
+                        totalLatencyMillis = it.totalLatencyMillis + latencyMillis,
+                        note = session.memory.note,
+                        plannerGoal = session.plannerGoal,
+                    )
+                }
+                return
+            }
+            is Gated.Committed -> gated
+        }
+
+        val report = session.act(turn, committed.choice, committed.then, committed.result.thought, committed.result.note)
 
         val decision = Decision(
             number = state.value.decisions + 1,
             state = turn.gameState,
-            actions = report.performed.ifEmpty { listOf(choice.key) },
-            confidence = result.confidence,
-            probabilities = result.probabilities.entries.sortedByDescending { it.value }.map { it.key to it.value },
+            actions = report.performed.ifEmpty { listOf(committed.choice.key) },
+            confidence = committed.result.confidence,
+            probabilities = committed.result.probabilities.entries.sortedByDescending { it.value }.map { it.key to it.value },
             latencyMillis = latencyMillis,
-            model = result.model,
-            thought = result.thought,
-            note = result.note,
-            byPlanner = byPlanner,
+            model = committed.result.model,
+            thought = committed.result.thought,
+            note = committed.result.note,
+            byPlanner = committed.byPlanner,
             problem = report.problem,
             stop = report.stop,
         )
         val presses = session.actionsDone
+        // Counted before the update (this loop is their only writer): the run's milestones, also said aloud as
+        // they are reached — and checked once, where inside the update a retry of the copy could have run twice.
+        val reached = stats.check(report.after, state.value.decisions + 1, presses, inputTokens, cost)
         _state.update {
-            val inputTokens = it.inputTokens + result.inputTokens
-            val cost = it.costUsd + (result.costUsd ?: 0.0)
             it.copy(
                 lastDecision = decision,
                 history = (listOf(decision) + it.history).take(HISTORY_SIZE),
                 decisions = it.decisions + 1,
                 presses = presses,
                 inputTokens = inputTokens,
+                outputTokens = outputTokens,
                 costUsd = cost,
                 totalLatencyMillis = it.totalLatencyMillis + latencyMillis,
-                milestones = it.milestones + stats.check(report.after, it.decisions + 1, presses, inputTokens, cost),
+                milestones = it.milestones + reached,
                 note = session.memory.note,
                 plannerGoal = session.plannerGoal,
+            )
+        }
+        narrator()?.narrateDecision(decision)
+        reached.forEach { milestone -> narrator()?.narrateMilestone(milestone.name) }
+    }
+
+    /**
+     * The decide → verify loop's outcome: [Committed]'s choice passed the vision gate and is safe to carry out,
+     * [Refused]'s was stopped before the console (its reason is recorded, never pressed).
+     */
+    private sealed interface Gated {
+        val inputTokens: Int
+        val outputTokens: Int
+        val costUsd: Double
+
+        data class Committed(
+            val choice: AgentSession.Option,
+            val then: List<String>,
+            val result: ChoiceResult,
+            val byPlanner: Boolean,
+            override val inputTokens: Int,
+            override val outputTokens: Int,
+            override val costUsd: Double,
+        ) : Gated
+
+        data class Refused(
+            val blocked: VisionVerifier.BlockedAction,
+            val result: ChoiceResult,
+            val byPlanner: Boolean,
+            override val inputTokens: Int,
+            override val outputTokens: Int,
+            override val costUsd: Double,
+        ) : Gated
+    }
+
+    /**
+     * Asks the model until its choice passes the vision gate (at most [MAX_BLOCKED_RETRIES] extra asks, so at most
+     * 1 + [MAX_BLOCKED_RETRIES] model calls per turn): a refused movement is set as `previous_movement_failure` —
+     * its tile remembered as blocked too, when the refusal names one (a message box refuses the press with no tile,
+     * so the wall map is never told a lie) — so the model corrects itself within this same thinking (the game stays
+     * frozen) instead of next turn. Tokens and cost accumulate across every ask of the turn.
+     */
+    private suspend fun decideGated(turn: AgentSession.Turn, area: Area?): Gated {
+        var attempts = 0
+        var inputTokens = 0
+        var outputTokens = 0
+        var costUsd = 0.0
+        while (true) {
+            val (result, byPlanner) = decide(turn)
+            inputTokens += result.inputTokens
+            outputTokens += result.outputTokens
+            costUsd += result.costUsd ?: 0.0
+            val chosenId = pick(result)
+            val choice = turn.resolve(chosenId)
+                ?: throw DecisionException("${model.name} chose '$chosenId', which isn't an option now", retryable = true)
+            if (byPlanner) result.note?.let { session.plannerGoal = it }
+            val verdict = VisionVerifier.check(choice.action, turn.gameState.field, area, turn.gameState.screen)
+            // A refusal is told and retried either way; only a wall/person verdict names a tile to remember as
+            // blocked (a message box refuses the press with no tile: the map must not learn a false wall).
+            val blocked = when (verdict) {
+                VisionVerifier.Verdict.Allowed -> null
+                is VisionVerifier.Verdict.Blocked -> {
+                    turn.gameState.field?.let { session.memory.noteBlocked(it.mapId, verdict.destination, verdict.reason) }
+                    VisionVerifier.BlockedAction(choice.key, verdict.destination, verdict.reason)
+                }
+                is VisionVerifier.Verdict.Refused -> VisionVerifier.BlockedAction(choice.key, null, verdict.reason)
+            }
+            if (blocked != null) {
+                // Read once by the next request as `previous_movement_failure`: the retry below sees it; on the
+                // last attempt it stays set, so the next turn is told about the refusal too.
+                session.movementBlocked(blocked.describe())
+                attempts++
+                if (attempts > MAX_BLOCKED_RETRIES) {
+                    return Gated.Refused(blocked, result, byPlanner, inputTokens, outputTokens, costUsd)
+                }
+                continue
+            }
+            return Gated.Committed(
+                choice,
+                if (chosenId == result.choice) result.then else emptyList(),
+                result,
+                byPlanner,
+                inputTokens,
+                outputTokens,
+                costUsd,
             )
         }
     }
@@ -191,6 +324,9 @@ class PokemonPlayer(
     private companion object {
         const val HISTORY_SIZE = 50
         const val STAGNATION_DECISIONS = 10
+
+        /** Extra model asks allowed within one thinking after the vision gate refuses a chosen movement. */
+        const val MAX_BLOCKED_RETRIES = 2
     }
 }
 
@@ -207,6 +343,7 @@ data class PlayerState(
     val decisions: Int = 0,
     val presses: Int = 0,
     val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
     val costUsd: Double = 0.0,
     val totalLatencyMillis: Long = 0,
     val milestones: List<RunStats.Milestone> = emptyList(),

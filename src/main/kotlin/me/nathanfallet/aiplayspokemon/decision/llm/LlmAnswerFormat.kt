@@ -38,17 +38,22 @@ object LlmAnswerFormat {
         appendLine("Options (`choice` must be exactly one of these ids):")
         request.options.forEach { (id, description) -> appendLine("- $id: $description") }
         appendLine()
-        appendLine("Reply with only this JSON object, no other text:")
+        appendLine("Answer with only this JSON object — nothing before it, nothing after it, no code fences:")
         append("{")
         val fields = buildList {
-            if (request.reasoning) add("\"reasoning\": \"<think step by step: what you see, what you want, how to get there>\"")
+            // One short sentence: it is what the narrator reads aloud, and it is most of a turn's generation time.
+            if (request.reasoning) add("\"reasoning\": \"<one short sentence: what you see and why this choice>\"")
             else add("\"reasoning\": \"<one short sentence>\"")
-            if (request.allowNote) add("\"note\": \"<your updated note to yourself: current goal and plan, max 3 sentences>\"")
+            // `choice` right after the reasoning, before the free-form fields: a long `note` or `then` must never
+            // push the one field that matters past the token limit (an answer without `choice` is unusable).
             add("\"choice\": \"<option id>\"")
             if (request.allowSequence) add("\"then\": [<up to ${ChainRunner.MAX_THEN} more option ids to do right after, only if you are sure; [] otherwise>]")
+            if (request.allowNote) add("\"note\": \"<your updated note to yourself: current goal and plan, max 1 short sentence>\"")
         }
         append(fields.joinToString(", "))
         append("}")
+        appendLine()
+        append("`choice` is required in every answer: pick the best option id even when unsure.")
     }
 
     /** JSON schema of the answer, for backends supporting structured output. */
@@ -81,14 +86,15 @@ object LlmAnswerFormat {
         /**
          * The decision this answer makes for [request], as every LLM backend reports it: all the probability on the
          * choice (a generative model gives no distribution), no confidence, and what the backend measured ([model]
-         * that answered, [inputTokens], [costUsd]).
+         * that answered, [inputTokens], [outputTokens], [costUsd]).
          */
-        fun toChoiceResult(request: ChoiceRequest, model: String, inputTokens: Int, costUsd: Double? = null) = ChoiceResult(
+        fun toChoiceResult(request: ChoiceRequest, model: String, inputTokens: Int, outputTokens: Int = 0, costUsd: Double? = null) = ChoiceResult(
             choice = choice,
             probabilities = request.options.keys.associateWith { if (it == choice) 1.0 else 0.0 },
             confidence = null,
             model = model,
             inputTokens = inputTokens,
+            outputTokens = outputTokens,
             thought = reasoning,
             then = then,
             note = note,

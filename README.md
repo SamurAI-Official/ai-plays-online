@@ -1,7 +1,7 @@
-# ai-plays-pokemon
+# ai-plays-online
 
-Put an AI in front of Pokémon on a Nintendo DS emulator and watch it play, live (and take back the controls whenever
-you want). The same game, the same "eyes" and the same controller for every AI, so they can be compared:
+Put an AI in front of a Nintendo DS game and watch it play, live (and take back the controls whenever you want). The
+same game, the same "eyes" and the same controller for every AI, so they can be compared:
 
 - **[Jev](https://docs.typesafe.ai)**, TypeSafe's "System One" decision model: it doesn't generate text, it picks one
   option from a closed list and returns a calibrated **probability for every option**, in ~150 ms;
@@ -10,10 +10,19 @@ you want). The same game, the same "eyes" and the same controller for every AI, 
 - **Claude with your Claude Code login** (e.g. a Claude subscription, no API key), through `claude -p`;
 - **any external agent through MCP**: the app runs an MCP server and the agent (e.g. Claude Code) plays with tools.
 
+It started as [ai-plays-pokemon](https://github.com/kotlinds/ai-plays-pokemon) and is being opened up to other DS
+games: each game gets its own prompt (objective and conventions) and its own agent, and the app picks the game from
+the ROM itself. See [Tested games](#tested-games) for where each title stands.
+
+**Bring your own ROM.** No game, BIOS or firmware is included, downloaded or linked to: you must dump your own
+cartridges. This project is an orchestration and optimization layer over the projects we compiled, patched and tested
+(see [Provenance](#provenance-and-licenses)).
+
 What every AI gets:
 
-- **eyes**: we read the game's RAM (map around the player as text, position, dialogue, menus, party, battle...) and
-  describe it as JSON: no AI sees pixels;
+- **eyes**: for the games we have a typed reader for (Pokémon today) we read the game's RAM (map around the player as
+  text, position, dialogue, menus, party, battle...) and describe it as JSON: no AI sees pixels. Other DS games are
+  playable in the app, and get the screen instead (see [Tested games](#tested-games));
 - **memory**: what each of its actions changed, where it has been, what it read, the map it explored, its own notes;
 - **hands**, depending on the mode you pick:
     - **Pure**: the controller, nothing more: "which button do I press?" among the 12 DS buttons (+ wait);
@@ -25,32 +34,52 @@ What every AI gets:
 
 Every variant is an option in the app (mode, knowledge level, timing, sequences, reasoning, notes, explored map...),
 and each run records milestones (new places, story progress) with decisions, presses, time, tokens and cost in
-`~/.ai-plays-pokemon/runs/`, so configurations can be compared.
+`~/.ai-plays-online/runs/`, so configurations can be compared.
 
 ## Quick start
 
-You need **Java 21** (for example [Temurin 21](https://adoptium.net/temurin/releases/?version=21)) and a **Pokémon
-HeartGold (USA) ROM that you dumped yourself** (no ROM is provided).
+You need **Java 21** (for example [Temurin 21](https://adoptium.net/temurin/releases/?version=21)) and a **Nintendo DS
+ROM that you dumped yourself** (no ROM is provided — see [Tested games](#tested-games) for the titles we verified).
 
-1. Download `ai-plays-pokemon-<version>-universal.jar` from the
-   [latest release](https://github.com/kotlinds/ai-plays-pokemon/releases/latest). The same jar runs on macOS, Linux
-   and Windows (x86-64 and Apple Silicon).
+1. Build the app (or take the jar from a release of this repository). The same jar runs on macOS, Linux and Windows
+   (x86-64 and Apple Silicon).
 2. Run it, with the path to your ROM (or without it: the app asks for the ROM with a file picker and remembers it):
 
    ```bash
-   java -jar ai-plays-pokemon-<version>-universal.jar "/path/to/Pokemon - HeartGold Version (USA).nds"
+   java -jar ai-plays-online-<version>-universal.jar "/path/to/your game.nds"
    ```
 
    On first launch it downloads the DeSmuME emulator core for your platform (see below).
 3. Let an AI play:
     - **an agent through MCP** (e.g. Claude Code or Codex): keep the *MCP* tab selected (the server starts on port
       `3333`), then connect the agent, e.g. for Claude Code
-      `claude mcp add --transport http pokemon http://localhost:3333/mcp`, and ask it to play, for example: *"Play
+      `claude mcp add --transport http game http://localhost:3333/mcp`, and ask it to play, for example: *"Play
       Pokémon HeartGold through the `pokemon` MCP tools. Start a new game and beat the Pokémon League. Keep notes of
       your progress in NOTES.md."* For any other MCP client, the server's URL is `http://localhost:3333/mcp`
       (streamable HTTP);
     - **an LLM or Jev from the app**: choose it in the panel on the right, paste its API key if needed, and click
       **▶ Let … play**.
+
+## Tested games
+
+We run each title ourselves and record what works. "Typed agent" means the AI gets the game's state read from RAM
+(pokemon-client readers, the fullest support); "playable" means the game runs, the human can play and the emulator is
+measured for rollback, but the AI only has the screen. A ROM you bring is identified by its header, so a different
+region or revision of the same game still works but may not be tested.
+
+| Game                                | Region | ROM code | Typed agent | Rollback-safe core | Verified |
+|-------------------------------------|--------|----------|-------------|--------------------|----------|
+| Pokémon HeartGold                   | USA    | `IPKE`   | yes         | melonDS + DeSmuME (patched RTC) | 1,000-frame determinism, 300-frame two-process rollback, 1/3 packet loss |
+| Pokémon Platinum                    | USA    | `CPUE`   | yes         | melonDS + DeSmuME (patched RTC) | reader + boot check |
+| Mario Kart DS                       | USA    | `AMCE`   | no          | measured per build  | boot check, local wireless probe |
+| Final Fantasy III                   | USA    | `AFFE`   | no          | measured per build  | boot check |
+| Final Fantasy IV                    | USA    | `AFFE`/`YF4E` | no      | measured per build  | boot check |
+| Phantasy Star 0                     | USA    | `C2SE`   | no          | measured per build  | boot check |
+| Age of Empires: The Age of Kings    | USA    | `AE2E`   | no          | measured per build  | boot check |
+
+Rows are filled by running the engine's probes (determinism, save/load cost, local wireless) on each title with both
+patched cores; see [`docs/games.md`](docs/games.md) for the raw numbers and how to add a row. Other DS games run too:
+the app treats a ROM it doesn't know as play-only.
 
 ## Running from source
 
@@ -59,7 +88,7 @@ Requirements: JDK 21 and the ROM as above. Then an API key for the AI you want t
 parameters active, so fast enough on a laptop; small local models play poorly, cloud models play much better).
 
 ```bash
-./gradlew run --args="/path/to/Pokemon - HeartGold Version (USA).nds"
+./gradlew run --args="/path/to/your game.nds"
 ```
 
 Gradle downloads the libraries from Maven Central (libretro-kmp and
@@ -71,11 +100,14 @@ the other platforms' natives).
 
 ## Files and the emulator core
 
-Bring the ROM yourself. Its file name names the save: `heartgold-us.nds` → `heartgold-us.sav`.
+**Bring the ROM yourself**: a `.nds` file you dumped from a cartridge you own. Nothing here provides, downloads or
+links to a ROM, a BIOS or DS firmware, and the app identifies the game from the ROM's own header. The file name names
+the save: `heartgold-us.nds` → `heartgold-us.sav`.
 
 The emulator core is the only other file. It is downloaded on first launch from the libretro buildbot. Or copy it
 yourself, built for the target platform, into the data directory's `cores/` folder. The data directory is
-`~/.ai-plays-pokemon`, i.e. `%USERPROFILE%\.ai-plays-pokemon` on Windows.
+`~/.ai-plays-online`, i.e. `%USERPROFILE%\.ai-plays-online` on Windows (the old `~/.ai-plays-pokemon` is still read
+when the new one does not exist).
 
 | Platform                      | Core file (DeSmuME)      | Buildbot folder                        |
 |-------------------------------|--------------------------|----------------------------------------|
@@ -135,12 +167,12 @@ You can play at the same time as the AI: the emulator merges both inputs.
 
 ### Configuration
 
-Everything can be set in the app; settings are saved in `~/.ai-plays-pokemon/config.properties` (next to the downloaded
+Everything can be set in the app; settings are saved in `~/.ai-plays-online/config.properties` (next to the downloaded
 core, in-game saves and save states). Environment variables take precedence:
 
 | Environment variable                                                          | Config key              | Default                                |
 |-------------------------------------------------------------------------------|-------------------------|----------------------------------------|
-| `POKEMON_ROM` (or first argument)                                             | `rom`                   | asked with a file picker               |
+| `AI_PLAYS_ONLINE_ROM` (or `POKEMON_ROM`, or first argument)                    | `rom`                   | asked with a file picker               |
 | `DECISION_BACKEND` (`mcp` / `llm` / `jev`)                                    | `backend`               | `mcp`                                  |
 | `TYPESAFE_API_KEY`                                                            | `typesafe.apiKey`       | entered in the app                     |
 | `JEV_MODEL`                                                                   | `typesafe.model`        | `jev-latest`                           |
@@ -152,10 +184,30 @@ core, in-game saves and save states). Environment variables take precedence:
 | `EMULATOR_CORE` (`desmume` / `melonds`)                                       | `emulator.core`         | `desmume`                              |
 | `START_MUTED`                                                                 | `start.muted`           | `false`                                |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`                   | `llm.<provider>.apiKey` | entered in the app                     |
-| `AI_PLAYS_POKEMON_DATA_DIR`                                                   | —                       | `~/.ai-plays-pokemon`                  |
+| `AI_PLAYS_ONLINE_DATA_DIR`                                                    | —                       | `~/.ai-plays-online`                   |
 
 **Jev without the cloud.** Jev itself is only served by TypeSafe (no public weights). `JEV_ENDPOINT` can point to any
 server implementing the same `POST /v1/systemone` protocol, e.g. an open-weight reproduction of Jev served locally.
+
+## Provenance and licenses
+
+This repository is a fork of [kotlinds/ai-plays-pokemon](https://github.com/kotlinds/ai-plays-pokemon) and an
+orchestration and optimization layer over the projects we compiled, patched and tested — we do not reimplement an
+emulator, a libretro frontend or a game client:
+
+| Project | What we use it for | License |
+|---|---|---|
+| [ai-plays-pokemon](https://github.com/kotlinds/ai-plays-pokemon) | the app this fork starts from | **none declared upstream** (all rights with its author; our changes are listed in the git history) |
+| [pokemon-client](https://github.com/kotlinds/pokemon-client) | reads a game from RAM/ROM into a typed model, typed actions | Apache-2.0 |
+| [libretro-kmp](https://github.com/kotlinds/libretro-kmp) | libretro frontend (Kotlin Multiplatform) | Apache-2.0 |
+| [melonDS](https://github.com/libretro/melonDS) / [DeSmuME](https://github.com/libretro/desmume) | the DS cores the app downloads | GPL-3.0 / GPL-2.0 (not redistributed here) |
+| [libretro-rollback](https://github.com/SamurAI-Official/libretro-rollback) | rollback netcode engine, delta snapshots, DS local wireless; vendored at `engine/libretro-rollback` | Apache-2.0 (GGPO's MIT license reproduced inside) |
+| [Koog](https://github.com/JetBrains/koog), [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform), [Ktor](https://ktor.io), [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk) | AI clients, UI, MCP server | Apache-2.0 / MIT |
+
+Our patches to the DS cores (fixed RTC for determinism, dirty pages for delta snapshots, frontend-routed local
+wireless for two-console play) live in the engine repository under `docs/patches`, with build instructions and the
+pinned hashes of the builds we tested. See [`NOTICE`](NOTICE) for the full attribution text, and our own `LICENSE`
+(Apache-2.0) for the code we added. **No game data is distributed by this project.**
 
 ## How it works
 
@@ -214,13 +266,18 @@ unsure. Having the three side by side, with milestones recorded for each run, is
 
 ## Extending
 
-- **Another game** (Diamond/Pearl, Black/White, a GBA game later...), in pokemon-client, see its
+- **Another game**: the app identifies a ROM by its header and looks up a *game profile* (name, per-game objective and
+  conventions prompt, whether the AI gets RAM state or the screen, preferred core). Profiles for the titles in
+  [Tested games](#tested-games) ship with the app, and yours can be added without touching the code — see
+  [`docs/games.md`](docs/games.md). Full RAM-level support for a new game is a reader in
+  [pokemon-client](https://github.com/kotlinds/pokemon-client), see its
   [adding-a-game guide](https://github.com/kotlinds/pokemon-client/blob/main/docs/adding-a-game.md): implement
-  `PokemonGame` (RAM → `GameState`, screen
-  decoders, optionally `world` and `data` from the ROM) and register its ROM code in `PokemonGames`, and give it its
-  recipes (the common ones, overriding only the steps that
-  differ); the navigator, the registry, the MCP server and every decider work unchanged.
-- **Another emulator**: implement `ConsolePort` (or add a `LibretroCoreSpec` entry for another libretro core).
+  `PokemonGame` (RAM → `GameState`, screen decoders, optionally `world` and `data` from the ROM), register its ROM code
+  in `PokemonGames`, and give it its recipes; the navigator, the registry, the MCP server and every decider work
+  unchanged.
+- **Another emulator**: implement `ConsolePort` (or add a `LibretroCoreSpec` entry for another libretro core). The
+  patched builds with rollback-safe save states are described in
+  [libretro-rollback](https://github.com/SamurAI-Official/libretro-rollback).
 - **Another AI**: any model Koog supports is a provider + model id away (`LlmProvider`); anything else implements
   `DecisionModel`.
 - **Better eyes**: the more faithfully the game reader describes the screen (menu options, text in apps...), the better

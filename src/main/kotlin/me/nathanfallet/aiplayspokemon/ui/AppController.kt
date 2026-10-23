@@ -15,10 +15,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import me.nathanfallet.aiplayspokemon.agent.DecisionNarrator
+import me.nathanfallet.aiplayspokemon.agent.NarrationControl
 import me.nathanfallet.aiplayspokemon.agent.PokemonPlayer
 import me.nathanfallet.aiplayspokemon.config.AppConfig
 import dev.kotlinds.pokemonclient.console.Button
@@ -41,6 +44,7 @@ import me.nathanfallet.aiplayspokemon.agent.GameSession
 import me.nathanfallet.aiplayspokemon.decision.claudecode.ClaudeCodeDecisionModel
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmDecisionModel
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmProvider
+import me.nathanfallet.aiplayspokemon.decision.llm.OllamaModels
 
 /**
  * Glue between the UI and the rest of the app: owns the [PokemonPlayer], turns keyboard events into
@@ -64,10 +68,65 @@ class AppController(
     /** The LLM used when [backend] is [DecisionBackend.LLM]. */
     val llm: StateFlow<LlmSettings> = _llm.asStateFlow()
 
+    /** Base URL for OpenAI-compatible endpoints (e.g. LM Studio). */
+    private val _openAiBaseUrl = MutableStateFlow(config.openAiBaseUrl)
+
+    /** Base URL for OpenAI-compatible endpoints (e.g. LM Studio). */
+    val openAiBaseUrl: StateFlow<String?> = _openAiBaseUrl.asStateFlow()
+
+    /** Sets the OpenAI base URL and recreates the player. */
+    fun setLlmBaseUrl(url: String?) {
+        val trimmed = url?.trim()?.takeIf { it.isNotBlank() }
+        config.saveLlmBaseUrl(trimmed)
+        _openAiBaseUrl.value = trimmed
+        if (_llm.value.provider == LlmProvider.OPENAI) createPlayer()
+    }
+
+    /** Client that talks to the local Ollama instance to list installed models. */
+    private val ollamaService = OllamaModels.create()
+
+    private val _ollamaModels = MutableStateFlow<List<String>>(emptyList())
+
+    /** Models installed in the local Ollama instance (fetched via `GET /api/tags`). */
+    val ollamaModels: StateFlow<List<String>> = _ollamaModels.asStateFlow()
+
+    private val _ollamaModelsLoading = MutableStateFlow(false)
+
+    /** Whether an Ollama model list refresh is currently in flight. */
+    val ollamaModelsLoading: StateFlow<Boolean> = _ollamaModelsLoading.asStateFlow()
+
+    private val _ollamaModelsError = MutableStateFlow<String?>(null)
+
+    /** Error message from the last Ollama model list refresh, or null when there was none. */
+    val ollamaModelsError: StateFlow<String?> = _ollamaModelsError.asStateFlow()
+
     private val _settings = MutableStateFlow(config.playerSettings)
 
     /** The experiment options of the player; changes apply from the next decision. */
     val settings: StateFlow<PlayerSettings> = _settings.asStateFlow()
+
+    /** The voice saying decisions (state for the picker; the narrator reads it per line, no restart). */
+    private val _narrationVoice = MutableStateFlow(config.narrationVoice)
+
+    val narrationVoice: StateFlow<String> = _narrationVoice.asStateFlow()
+
+    /**
+     * The narration control: the voice saying the decisions, and the lines it really said. It owns the
+     * narrator, so the toggle, the voice and the readout all live in one testable place.
+     */
+    private val narration = NarrationControl(
+        voice = { _narrationVoice.value },
+        rate = { config.narrationRate },
+        scope = scope,
+        log = { line -> emulator.systemLog.add(line) },
+        initialEnabled = config.playerSettings.narration,
+    )
+
+    /**
+     * The lines the voice really said, newest first, with the voice that said them: the proof that a decision
+     * was read out (what was said, and in which voice).
+     */
+    val spoken: StateFlow<List<String>> = narration.spoken
 
     private val _player = MutableStateFlow<PokemonPlayer?>(null)
 
@@ -120,6 +179,7 @@ class AppController(
         createPlayer()
         updateMcpServer()
         scope.launch { refreshPanel() }
+        refreshOllamaModels()
     }
 
     fun updateSettings(transform: (PlayerSettings) -> PlayerSettings) {
@@ -127,6 +187,39 @@ class AppController(
         _settings.value = updated
         config.playerSettings = updated
         emulator.musicDuringPauses = updated.musicDuringPausesSettings
+        // The setting and the narrator are one thing: turning the setting off closes the narrator, turning it
+        // on lets the next decision be said (the voice itself is read per line).
+        narration.setEnabled(updated.narration)
+    }
+
+    /**
+     * The decision narrator while narration is on, created on first use (stopped when switched off).
+     * The player asks for it per decision, so the toggle needs no new player.
+     */
+    private fun narrator(): DecisionNarrator? = narration.narrator()
+
+    /**
+     * The voice narrating decisions, or null when narration is off: the dropdown's single choice (off, or a voice).
+     * Picking a voice turns narration on (and says the choice aloud, so it is heard at once).
+     */
+    fun setNarrationVoice(voice: String?) {
+        if (voice == null) {
+            updateSettings { it.copy(narration = false) }
+            return
+        }
+        config.narrationVoice = voice
+        _narrationVoice.value = voice
+        narration.setVoice(voice)
+        if (!_settings.value.narration) updateSettings { it.copy(narration = true) }
+    }
+
+    /**
+     * Explicit on/off toggle for the Whisper speech control: turns narration on or off regardless of the voice
+     * dropdown, following the app's setting (the saved [config.playerSettings.narration] flag). Off closes the
+     * narrator, on lets the next decision be said (the voice itself is read per line).
+     */
+    fun setNarrationEnabled(enabled: Boolean) {
+        updateSettings { it.copy(narration = enabled) }
     }
 
     /** Runs the MCP server only while the MCP tab is selected (one player at a time). */
@@ -167,6 +260,7 @@ class AppController(
         config.llmProvider = provider
         _llm.value = _llm.value.copy(provider = provider, model = config.llmModel(provider))
         createPlayer()
+        if (provider == LlmProvider.OLLAMA) refreshOllamaModels()
     }
 
     fun setLlmModel(model: String) {
@@ -181,6 +275,21 @@ class AppController(
         config.llmThinking = thinking
         _llm.value = _llm.value.copy(thinking = thinking)
         createPlayer()
+    }
+
+    /** Fetches the list of models installed in the local Ollama instance. Safe to call repeatedly. */
+    fun refreshOllamaModels() {
+        scope.launch {
+            _ollamaModelsLoading.value = true
+            _ollamaModelsError.value = null
+            try {
+                _ollamaModels.value = ollamaService.listModels()
+            } catch (e: Exception) {
+                _ollamaModelsError.value = e.message
+            } finally {
+                _ollamaModelsLoading.value = false
+            }
+        }
     }
 
     /** Port of the MCP server: one app per agent, each on its own port, to compare agents side by side. */
@@ -217,20 +326,21 @@ class AppController(
     private fun createPlayer() {
         _player.value?.pause()
         val game = game
-        val model = createModel(_backend.value)
+        val model = createModel(_backend.value, emulator)
         _player.value = if (game != null && model != null) {
             // In hybrid mode, the LLM settings define the planner (it may be the same as the decider).
             PokemonPlayer(
                 emulator, game, recorder!!, model,
-                planner = createModel(DecisionBackend.LLM),
+                planner = createModel(DecisionBackend.LLM, emulator),
                 scope = scope,
                 settings = { _settings.value },
                 runsDirectory = config.dataDirectory.resolve("runs"),
+                narrator = { narrator() },
             )
         } else null
     }
 
-    private fun createModel(backend: DecisionBackend): DecisionModel? = when (backend) {
+    private fun createModel(backend: DecisionBackend, emulator: ConsoleHost): DecisionModel? = when (backend) {
         DecisionBackend.JEV -> {
             // TypeSafe's cloud needs a key; a custom (e.g. local) endpoint may not.
             if (config.jevApiKey == null && config.jevEndpoint == JevClient.DEFAULT_ENDPOINT) null
@@ -243,7 +353,17 @@ class AppController(
             when {
                 provider == LlmProvider.CLAUDE_CODE -> ClaudeCodeDecisionModel(model, effort = if (thinking) "high" else "low")
                 provider.needsApiKey && apiKey == null -> null
-                else -> LlmDecisionModel(provider, model, apiKey, thinking)
+                // Both OpenAI-compatible endpoints (LM Studio, and Ollama's own /v1 API) go through our client:
+                // one request timeout (300 s — a cold model load is not an error) and the same error handling.
+                else -> LlmDecisionModel(
+                    provider, model, apiKey, thinking,
+                    when (provider) {
+                        LlmProvider.OPENAI -> config.openAiBaseUrl
+                        LlmProvider.OLLAMA -> config.ollamaBaseUrl
+                        else -> null
+                    },
+                    latestFrame = { emulator.frames.value },
+                )
             }
         }
 
@@ -300,8 +420,20 @@ class AppController(
     }
 
     fun togglePause() = emulator.setUserPaused(emulator.status.value.running)
-}
 
+    /**
+     * The window lost focus: key and touch releases made while unfocused never arrive, which would keep a button
+     * held (the game walking on its own) and the screen touched — both make every agent action refused as "human
+     * driving", the agent then caught waiting. So release everything the human held, and say why in the log.
+     */
+    fun onFocusLost() {
+        humanButtons.clear()
+        emulator.releaseHumanInputs("window focus lost")
+    }
+
+    private companion object {
+    }
+}
 /**
  * What the control panel shows of the game at one moment: what an agent gets ([GameSession.describe], the library's
  * [dev.kotlinds.pokemonclient.view.AgentView]) and a one-line [summary] of it.

@@ -33,6 +33,7 @@ class AgentMemory(
     private val maxPlaces: Int = 8,
     private val maxDialogues: Int = 6,
     private val maxThoughts: Int = 3,
+    private val maxBlocked: Int = 40,
 ) {
     private val actions = ArrayDeque<Step>()
     private val places = ArrayDeque<Place>()
@@ -47,6 +48,19 @@ class AgentMemory(
     private val walked = HashMap<Int, MutableSet<Pair<Int, Int>>>()
     private val mapNames = HashMap<Int, MapName>()
 
+    /** Per map id: tiles a step was refused at before commit, with why (the explored map's blocked heatmap). */
+    private val blocked = HashMap<Int, LinkedHashMap<Pair<Int, Int>, String>>()
+
+    /** The story goal the agent is working on, as of the last observation. */
+    var storyGoal: String? = null
+        private set
+    /** The other open goals, as of the last observation. */
+    private val storyAlternatives = ArrayDeque<String>()
+    /** The goals that were blocked and why, as of the last observation. */
+    private val storyBlocked = ArrayDeque<String>()
+    /** How many story steps were already done, as of the last observation. */
+    var storyStepsDone: Int = 0
+        private set
     /** The model's own note (goal/plan), rewritten at will. */
     var note: String? = null
         private set
@@ -92,6 +106,30 @@ class AgentMemory(
         return walked.getOrPut(field.mapId) { HashSet() }.add(field.x to field.y)
     }
 
+    /**
+     * Remembers that walking into the tile [destination] of [mapId] was refused before it happened, and why: the
+     * explored map marks it, so the model sees the wall layout it has found instead of trying the tile again.
+     */
+    fun noteBlocked(mapId: Int, destination: VisionVerifier.Point, reason: String) {
+        val tiles = blocked.getOrPut(mapId) { LinkedHashMap() }
+        tiles.remove(destination.x to destination.y)
+        tiles[destination.x to destination.y] = reason
+        while (tiles.size > maxBlocked) tiles.remove(tiles.entries.first().key)
+    }
+
+    /**
+     * Remembers the story of the game as it stands now: the goal being worked on, the other open goals, the goals that
+     * are blocked (and why) and how far the story has progressed. Only facts, never advice.
+     */
+    fun observeStory(plan: StoryGoalPlan) {
+        storyGoal = plan.goal?.description
+        storyStepsDone = plan.completedSteps
+        storyAlternatives.clear()
+        storyAlternatives.addAll(plan.alternatives.map { it.description })
+        storyBlocked.clear()
+        storyBlocked.addAll(plan.blocked.map { "${it.goal.description}: ${it.reason}" })
+    }
+
     fun updateNote(value: String?) {
         if (!value.isNullOrBlank()) note = value
     }
@@ -114,6 +152,12 @@ class AgentMemory(
             }
         }))
         if (dialogues.isNotEmpty()) put("dialogues_read", JsonArray(dialogues.map(::JsonPrimitive)))
+        if (storyGoal != null || storyAlternatives.isNotEmpty() || storyBlocked.isNotEmpty() || storyStepsDone > 0) put("story", buildJsonObject {
+            storyGoal?.let { put("goal", it) }
+            if (storyAlternatives.isNotEmpty()) put("other_open_goals", JsonArray(storyAlternatives.map(::JsonPrimitive)))
+            if (storyBlocked.isNotEmpty()) put("blocked_goals", JsonArray(storyBlocked.map(::JsonPrimitive)))
+            if (storyStepsDone > 0) put("steps_done", storyStepsDone)
+        })
         note?.let { put("your_note", it) }
         if (thoughts.isNotEmpty()) put("your_last_thoughts", JsonArray(thoughts.map(::JsonPrimitive)))
         if (includeExploredMap) current?.let { field -> exploredMap(field)?.let { put("explored_map", it) } }
@@ -127,6 +171,7 @@ class AgentMemory(
         val player = MapView.player(field.facing)
         val tiles = explored[mapId]?.takeIf { it.isNotEmpty() } ?: return null
         val walkedTiles = walked[mapId].orEmpty()
+        val blockedTiles = blocked[mapId].orEmpty()
         val minX = maxOf(tiles.keys.minOf { it.first }, playerX - MAX_EXPLORED_HALF_WIDTH)
         val maxX = minOf(tiles.keys.maxOf { it.first }, playerX + MAX_EXPLORED_HALF_WIDTH)
         val minY = maxOf(tiles.keys.minOf { it.second }, playerY - MAX_EXPLORED_HALF_HEIGHT)
@@ -137,7 +182,7 @@ class AgentMemory(
                 when {
                     x == playerX && y == playerY -> player
                     (x to y) in walkedTiles -> WALKED
-                    else -> tiles[x to y]?.also { used += it } ?: UNSEEN
+                    else -> blockedTiles[x to y]?.let { BLOCKED } ?: tiles[x to y]?.also { used += it } ?: UNSEEN
                 }.toString()
             }
         }
@@ -147,9 +192,19 @@ class AgentMemory(
             put(
                 "how_to_read",
                 "Everything you have seen on this map so far, north up, one character per tile, from x $minX (left) to x $maxX (right). " +
-                    "$player you, $WALKED tiles you walked on, blank never seen" + legend.joinToString("") { ", $it" } + ".",
+                    "$player you, $WALKED tiles you walked on" +
+                    (if (blockedTiles.isNotEmpty()) ", $BLOCKED blocked tiles you tried to walk into" else "") +
+                    ", blank never seen" + legend.joinToString("") { ", $it" } + ".",
             )
             put("rows", JsonArray(rows.map(::JsonPrimitive)))
+            if (blockedTiles.isNotEmpty()) put(
+                "blocked_tiles",
+                JsonArray(
+                    blockedTiles.entries
+                        .sortedWith(compareBy({ it.key.second }, { it.key.first }))
+                        .map { (tile, reason) -> JsonPrimitive("(${tile.first}, ${tile.second}): $reason") },
+                ),
+            )
         }
     }
 
@@ -230,6 +285,7 @@ class AgentMemory(
         const val MAX_EXPLORED_HALF_WIDTH = 20
         const val MAX_EXPLORED_HALF_HEIGHT = 15
         const val WALKED = 'o'
+        const val BLOCKED = 'x'
         const val UNSEEN = ' '
     }
 }

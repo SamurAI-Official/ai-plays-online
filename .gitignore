@@ -12,3 +12,17 @@ local.properties
 
 # Local test ROMs
 roms/
+
+# Emulator cores (downloaded at runtime; patched builds are rebuilt locally, never committed)
+*.dylib
+*.so
+*.dll
+*.zip
+
+# Emulator/agent runtime artifacts that can land in the working tree
+snapshots/
+runs/
+*.state
+*.state[0-9]
+*.srm
+config.properties

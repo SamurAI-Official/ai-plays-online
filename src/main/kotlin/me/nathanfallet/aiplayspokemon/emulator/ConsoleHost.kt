@@ -65,6 +65,14 @@ class ConsoleHost(
         data object Idle : Driver
         data object Human : Driver
         data class Agent(val label: String) : Driver
+
+        /** As shown to people: the same words in the UI and in the [systemLog]. */
+        val description: String
+            get() = when (this) {
+                Idle -> "nobody (paused)"
+                Human -> "you / free run"
+                is Agent -> "agent ($label)"
+            }
     }
 
     private val tasks = ConcurrentLinkedQueue<(LibretroConsole) -> Unit>()
@@ -73,7 +81,16 @@ class ConsoleHost(
     private val reads = FrameReads()
     private val humanButtons = MutableStateFlow<Set<Button>>(emptySet())
 
-    @Volatile private var humanTouch: TouchPoint? = null
+    /** The buttons the human holds right now (the UI's debug readout). */
+    val heldButtons: StateFlow<Set<Button>> = humanButtons.asStateFlow()
+
+    private val _touching = MutableStateFlow<TouchPoint?>(null)
+
+    /** Where the human touches the touch screen right now (null: released), for the UI's debug readout. */
+    val touching: StateFlow<TouchPoint?> = _touching.asStateFlow()
+
+    /** What changed recently (buttons, touch, who drives, pauses, save states), newest first: the UI's debug log. */
+    val systemLog = SystemLog()
 
     /** The human's real inputs (not the free run): agents are refused while they play. */
     val humanActivity = HumanActivity()
@@ -90,6 +107,13 @@ class ConsoleHost(
 
     /** Who drives the console right now (shown in the UI and to agents). */
     val driver: StateFlow<Driver> = _driver.asStateFlow()
+
+    /** Says who drives the console, remembering the change once (the loop says it after every frame). */
+    private fun drive(driver: Driver) {
+        if (_driver.value == driver) return
+        _driver.value = driver
+        systemLog.add("driver: ${driver.description}")
+    }
 
     /**
      * Called on the console thread after every emulated frame (free play and agent actions alike), with the frame
@@ -178,20 +202,20 @@ class ConsoleHost(
             if (!status.value.running) {
                 if (steppedSinceIdle && shadowAudio.delaysPause(console)) {
                     // The pause starts a frame later, at a frame its music can be resynced from (see ShadowAudio).
-                    console.step(1, InputFrame(humanButtons.value, humanTouch))
+                    console.step(1, InputFrame(humanButtons.value, _touching.value))
                     afterFrame(console)
                     continue
                 }
                 steppedSinceIdle = false
-                _driver.value = Driver.Idle
+                drive(Driver.Idle)
                 shadowAudio.onIdle(console)
                 Thread.sleep(5)
                 pacer.reset()
                 continue
             }
-            _driver.value = Driver.Human
+            drive(Driver.Human)
             shadowAudio.beforeMainFrame(console)
-            console.step(1, InputFrame(humanButtons.value, humanTouch))
+            console.step(1, InputFrame(humanButtons.value, _touching.value))
             afterFrame(console)
         }
     }
@@ -223,7 +247,7 @@ class ConsoleHost(
         userPaused.first { !it }
         return onConsoleThread { console ->
             leaseActive = true
-            _driver.value = Driver.Agent(label)
+            drive(Driver.Agent(label))
             try {
                 val scope = ActionScope(
                     port = resumingPort(console),
@@ -231,7 +255,7 @@ class ConsoleHost(
                     interruption = {
                         when {
                             closed -> Interruption.CANCELLED
-                            humanButtons.value.isNotEmpty() || humanTouch != null -> Interruption.HUMAN
+                            humanButtons.value.isNotEmpty() || _touching.value != null -> Interruption.HUMAN
                             else -> null
                         }
                     },
@@ -281,17 +305,24 @@ class ConsoleHost(
      * agent actions wait while it is set.
      */
     fun setUserPaused(paused: Boolean) {
+        val wasRunning = status.value.running
         userPaused.value = paused
         _status.update { it.copy(running = !paused) }
+        if (wasRunning != !paused) systemLog.add(if (paused) "paused (you)" else "resumed (you)")
     }
 
     override fun start() = resume()
 
-    override fun pause() = _status.update { it.copy(running = false) }
+    override fun pause() {
+        if (status.value.running) systemLog.add("paused (agent thinking)")
+        _status.update { it.copy(running = false) }
+    }
 
     /** Resumes the free run, unless the person watching paused the game (their pause wins). */
     override fun resume() {
-        if (!userPaused.value) _status.update { it.copy(running = true) }
+        if (userPaused.value) return
+        if (!status.value.running) systemLog.add("resumed")
+        _status.update { it.copy(running = true) }
     }
 
     override fun setFastForward(enabled: Boolean) {
@@ -314,6 +345,9 @@ class ConsoleHost(
     val musicDuringPausesUnavailable: String? get() = shadowAudio.unsupportedReason
 
     override fun setButtons(buttons: Set<Button>) {
+        if (humanButtons.value != buttons) {
+            systemLog.add("keys: " + (buttons.joinToString { it.name.lowercase() }.ifEmpty { "none" }))
+        }
         if (humanButtons.value.isEmpty() && buttons.isNotEmpty()) humanInputListener?.invoke()
         humanButtons.value = buttons
         humanActivity.keys(held = buttons.isNotEmpty())
@@ -321,13 +355,27 @@ class ConsoleHost(
 
     override fun touch(position: Pair<Float, Float>?) {
         // The UI gives a position as a fraction of the whole frame (both screens); only the bottom one is touchable.
-        val width = info.platform.screenWidth
-        val height = info.platform.screenHeight
-        humanTouch = position?.let { (fx, fy) ->
-            val y = (fy * 2 - 1) * height
-            if (y < 0) null else TouchPoint((fx * width).toInt().coerceIn(0, width - 1), y.toInt().coerceIn(0, height - 1))
+        val point = position?.let { (fx, fy) ->
+            humanTouchPoint(fx, fy, info.platform.screenWidth, info.platform.screenHeight)
         }
-        humanActivity.touch(touching = humanTouch != null)
+        val was = _touching.value
+        _touching.value = point
+        humanActivity.touch(touching = point != null)
+        when {
+            was == null && point != null -> systemLog.add("touch: down at ${point.x},${point.y}")
+            was != null && point == null -> systemLog.add("touch: released")
+        }
+    }
+
+    /**
+     * Releases everything the human holds: the window lost focus (key and touch releases made while unfocused never
+     * arrive, which would keep the game pressed and every agent action refused as "human driving"). [reason] is said
+     * in the log either way, so a silent focus loss is visible there.
+     */
+    fun releaseHumanInputs(reason: String) {
+        setButtons(emptySet())
+        if (_touching.value != null) touch(null)
+        systemLog.add("inputs cleared ($reason)")
     }
 
     override suspend fun readMainRam(): ByteArray = onConsoleThread { console ->
@@ -347,13 +395,16 @@ class ConsoleHost(
     override suspend fun saveState(slot: Int): Boolean = onConsoleThread { console ->
         Files.createDirectories(saveStateDirectory)
         Files.write(stateFile(slot), console.saveState())
+        systemLog.add("state $slot saved")
         true
     }
 
     override suspend fun loadState(slot: Int): Boolean = onConsoleThread { console ->
         shadowAudio.discard() // the paused game is replaced: its shadow's music isn't the new one's
         val file = stateFile(slot)
-        afterLoad(Files.exists(file) && console.loadState(Files.readAllBytes(file)), stateLoadedListener)
+        val loaded = Files.exists(file) && console.loadState(Files.readAllBytes(file))
+        systemLog.add(if (loaded) "state $slot loaded" else "state $slot: nothing to load")
+        afterLoad(loaded, stateLoadedListener)
     }
 
     override suspend fun reset() = onConsoleThread { console ->
@@ -377,6 +428,15 @@ class ConsoleHost(
             return loaded
         }
     }
+}
+
+/**
+ * The touch point of a press given as a fraction (0..1) of the whole frame (both screens stacked): null on the top
+ * screen (nothing to touch there), the bottom screen's pixel otherwise.
+ */
+internal fun humanTouchPoint(fx: Float, fy: Float, width: Int, height: Int): TouchPoint? {
+    val y = (fy * 2 - 1) * height
+    return if (y < 0) null else TouchPoint((fx * width).toInt().coerceIn(0, width - 1), y.toInt().coerceIn(0, height - 1))
 }
 
 /**
