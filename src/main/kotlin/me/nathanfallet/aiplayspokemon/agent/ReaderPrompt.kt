@@ -90,7 +90,8 @@ object ReaderPrompt {
         append("`reader` is what a calibrated memory reader sees (its `screen` value is which screen the game is on). ")
         append("`screen` is what the picture shows and how it is moving: use it — a dialogue box wants A, a menu wants ")
         append("the D-pad, a stable picture means the game is waiting for you, and a picture that keeps changing is ")
-        append("loading or animating. ")
+        append("loading or animating. `screen.looks_like` is a reading of the picture, and like the walkthrough it can ")
+        append("be wrong: the facts are `stable_frames`, `changed_by_your_action` and the reader. ")
         append(profile.conventions)
         if (chapter != null) {
             append(" Follow the walkthrough: its `goal` is what to achieve now, its `hints` are how. ")

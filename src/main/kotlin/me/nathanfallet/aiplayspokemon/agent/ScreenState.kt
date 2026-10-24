@@ -97,17 +97,20 @@ class ScreenState {
             model.choose(
                 ChoiceRequest(
                     state = buildJsonObject {
-                        put("question", "Look at the screenshot attached to this request: what is on the screen?")
+                        put("question", "What is the game showing right now?")
                         put(
                             "why",
-                            "Another agent plays this game through a memory reader. It cannot see the screen, and what " +
-                                "the screen shows decides what to press (a dialogue box wants A, a menu wants the D-pad).",
+                            "Another agent plays this game through a memory reader that cannot see the screen: this " +
+                                "reading is its only view of it, and it decides what to press from it.",
                         )
                     },
-                    instructions = "Answer with the option that matches the screen you can see. If no image is " +
-                        "attached, or you cannot see it, answer `unknown` — never guess a screen you cannot see.",
+                    instructions = "You are looking at a Nintendo DS screenshot: two 256x192 screens, the top one above " +
+                        "the bottom one. Answer with the option that best describes what the game is showing and what " +
+                        "the player would respond to. If no image is attached, or you cannot see one, answer `unknown` " +
+                        "— never guess a screen you cannot see.",
                     options = SCREENS,
-                    reasoning = false,
+                    // Reading a picture is a vision task, not a formality: the model is allowed to think about it.
+                    reasoning = true,
                 ),
             )
         }.onFailure { failure ->
@@ -127,9 +130,9 @@ class ScreenState {
 
         /** The kinds of screen a DS game shows, in the words the agent needs to act on them. */
         val SCREENS = mapOf(
-            "dialogue" to "a dialogue or text box is open: it wants A (or a tap) to go on",
-            "menu" to "a menu, list or menu-like screen is up: move with the D-pad, confirm with A",
-            "field" to "the game world is visible (a map, units, a board...): play it with the D-pad and the buttons",
+            "dialogue" to "a text or dialogue box is waiting to be advanced (press A or tap it)",
+            "menu" to "a menu, list or selection is on screen, waiting for a choice (move with the D-pad, confirm with A)",
+            "field" to "the game itself is being played (a map, units, a board): nothing is waiting to be dismissed",
             "loading" to "a loading or transition screen: nothing to press, wait",
             "intro" to "logos, a title screen or an intro/attract sequence: wait, or press START/A to skip it",
             "unknown" to "I cannot see the screen (no image, or a model without vision)",

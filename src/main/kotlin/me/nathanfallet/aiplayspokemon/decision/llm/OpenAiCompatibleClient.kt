@@ -41,6 +41,27 @@ class OpenAiCompatibleClient private constructor(
         )
     }
 
+    /** The OpenAI JSON of one message: a plain string, or text + image parts when a screenshot is attached. */
+    private fun ChatMessage.toJson(): JsonObject = buildJsonObject {
+        put("role", JsonPrimitive(role))
+        if (imagePngBase64 == null) {
+            put("content", JsonPrimitive(text))
+        } else {
+            put("content", JsonArray(listOf(
+                buildJsonObject {
+                    put("type", JsonPrimitive("text"))
+                    put("text", JsonPrimitive(text))
+                },
+                buildJsonObject {
+                    put("type", JsonPrimitive("image_url"))
+                    put("image_url", buildJsonObject {
+                        put("url", JsonPrimitive("data:image/png;base64,$imagePngBase64"))
+                    })
+                },
+            )))
+        }
+    }
+
     /** Result of a chat completion: the assistant's text and token usage. */
     data class ChatResult(
         val text: String,
@@ -48,10 +69,21 @@ class OpenAiCompatibleClient private constructor(
         val outputTokens: Int,
     )
 
+    /**
+     * One message of the conversation. [imagePngBase64] is the screenshot a vision model is shown: the OpenAI format
+     * carries it as a second part of the message's content (a plain string when there is none), which is what makes a
+     * multimodal endpoint able to *see* the screen at all.
+     */
+    data class ChatMessage(
+        val role: String,
+        val text: String,
+        val imagePngBase64: String? = null,
+    )
+
     /** Sends a chat completion request and returns the assistant's text and token usage. */
     suspend fun chat(
         model: String,
-        messages: List<Pair<String, String>>, // (role, content)
+        messages: List<ChatMessage>,
         temperature: Double = 0.7,
         // Headroom for hybrid-reasoning models (the qwen3 family): they may think before answering (see the
         // `chat_template_kwargs` below), and an answer cut off mid-generation (finish_reason=length, empty
@@ -62,12 +94,7 @@ class OpenAiCompatibleClient private constructor(
     ): ChatResult {
         val body = buildJsonObject {
             put("model", JsonPrimitive(model))
-            put("messages", JsonArray(messages.map { (role, content) ->
-                buildJsonObject {
-                    put("role", JsonPrimitive(role))
-                    put("content", JsonPrimitive(content))
-                }
-            }))
+            put("messages", JsonArray(messages.map { message -> message.toJson() }))
             put("temperature", JsonPrimitive(temperature))
             put("max_tokens", JsonPrimitive(maxTokens))
             put("stream", JsonPrimitive(false))

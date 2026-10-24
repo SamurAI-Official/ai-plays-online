@@ -167,6 +167,27 @@ The **Read the screen** switch (Experiments) turns the reading off; the stabilit
 stay (they are free). Nothing here needs a vision model to be useful, but only a vision model can read what a dialogue
 box *says*.
 
+## Checking that the model can see at all
+
+A vision model only helps if the screenshot actually reaches it, so there is a tool for exactly that:
+
+```bash
+LLM_PROVIDER=openai LLM_MODEL=<a vision model> OPENAI_BASE_URL=http://host:1234 OPENAI_API_KEY=lm-studio \
+  ./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.VisionCheckKt
+```
+
+It sends a solid red square and asks the model what colour it is:
+
+```text
+== vision check: OPENAI · ornith-1.0-9b (base URL http://100.102.229.67:1234) ==
+answer: Red
+tokens: 45 in / 2 out
+== the model sees images: the screenshot reaches it ==
+```
+
+If it answers anything else, the agent cannot see the screen no matter what the prompt says: check that the loaded
+model is the multimodal one, and that the endpoint accepts image parts (LM Studio reports a load failure as HTTP 400).
+
 ## What a reader is not
 
 - **It cannot invent meaning.** The calibration finds addresses and their behaviour; calling one "wood" is a judgment

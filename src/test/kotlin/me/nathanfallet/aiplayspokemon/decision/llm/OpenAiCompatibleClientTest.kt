@@ -34,8 +34,39 @@ class OpenAiCompatibleClientTest {
     }
 
     private fun chat(stub: Stub, thinking: Boolean = false) = runBlocking {
-        OpenAiCompatibleClient.create(stub.url, "key")
-            .chat("some-model", listOf("system" to "Choose.", "user" to "State: {}"), thinking = thinking)
+        OpenAiCompatibleClient.create(stub.url, "key").chat(
+            "some-model",
+            listOf(
+                OpenAiCompatibleClient.ChatMessage("system", "Choose."),
+                OpenAiCompatibleClient.ChatMessage("user", "State: {}"),
+            ),
+            thinking = thinking,
+        )
+    }
+
+    @Test
+    fun aScreenshotTravelsWithTheMessageSoAVisionModelCanSeeIt() {
+        val stub = Stub("""{"choices": [{"message": {"content": "{\"choice\": \"up\"}"}, "finish_reason": "stop"}]}""")
+        try {
+            runBlocking {
+                OpenAiCompatibleClient.create(stub.url, "key").chat(
+                    "some-model",
+                    listOf(
+                        OpenAiCompatibleClient.ChatMessage("system", "Choose."),
+                        OpenAiCompatibleClient.ChatMessage("user", "State: {}", imagePngBase64 = "AAAA"),
+                    ),
+                )
+            }
+            // The content of a message with an image is the OpenAI array form: text part + image part. Sending it as a
+            // plain string (what this client used to do) meant a multimodal endpoint never saw the screen at all.
+            assertTrue(""""content":[{"type":"text","text":"State: {}"}""" in stub.lastBody, stub.lastBody)
+            assertTrue(""""type":"image_url"""" in stub.lastBody, stub.lastBody)
+            assertTrue(""""url":"data:image/png;base64,AAAA"""" in stub.lastBody, stub.lastBody)
+            // A message without one stays a plain string, which every endpoint understands.
+            assertTrue(""""content":"Choose."""" in stub.lastBody, stub.lastBody)
+        } finally {
+            stub.close()
+        }
     }
 
     @Test
@@ -83,7 +114,8 @@ class OpenAiCompatibleClientTest {
         val stub = Stub("""{"choices": [{"message": {"content": "{\"choice\": \"up\"}"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 42, "completion_tokens": 7}}""")
         try {
             val result = runBlocking {
-                OpenAiCompatibleClient.create(stub.url, "key").chat("some-model", listOf("user" to "State: {}"))
+                OpenAiCompatibleClient.create(stub.url, "key")
+                    .chat("some-model", listOf(OpenAiCompatibleClient.ChatMessage("user", "State: {}")))
             }
             assertEquals("""{"choice": "up"}""", result.text)
             assertEquals(42, result.inputTokens)

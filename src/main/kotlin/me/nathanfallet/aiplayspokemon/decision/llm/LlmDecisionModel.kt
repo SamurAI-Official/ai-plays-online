@@ -79,9 +79,21 @@ class LlmDecisionModel(
             }
             val text = try {
                 if (compatibleClient != null) {
-                    // OpenAI-compatible endpoint (e.g. LM Studio): call it directly.
-                    val messages = decisionPrompt.messages.map { m ->
-                        m.role.name.lowercase() to m.textContent()
+                    // OpenAI-compatible endpoint (e.g. LM Studio): call it directly. The messages are built here, not
+                    // taken from the Koog prompt, because the screenshot has to travel with them: a vision model only
+                    // sees the screen if the image is a part of the message (see OpenAiCompatibleClient.ChatMessage).
+                    val messages = buildList {
+                        add(OpenAiCompatibleClient.ChatMessage("system", LlmAnswerFormat.instructions(request)))
+                        add(OpenAiCompatibleClient.ChatMessage("user", state, imagePngBase64 = screenshotBase64))
+                        previous?.let { (answer, error) ->
+                            add(OpenAiCompatibleClient.ChatMessage("assistant", answer))
+                            add(
+                                OpenAiCompatibleClient.ChatMessage(
+                                    "user",
+                                    "Invalid answer: $error Reply again with only the JSON object.",
+                                ),
+                            )
+                        }
                     }
                     val result = compatibleClient.chat(modelId, messages, thinking = thinking)
                     inputTokens += result.inputTokens

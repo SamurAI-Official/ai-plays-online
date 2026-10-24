@@ -52,6 +52,9 @@ class ReaderPlayer(
     private val history = ArrayDeque<String>()
     private val screenState = ScreenState()
 
+    /** The hash of the last frame the previous action ended on: what this action's change is measured against. */
+    private var lastSeenHash: Long? = null
+
     private val _state = MutableStateFlow(PlayerState())
     override val state: StateFlow<PlayerState> = _state.asStateFlow()
 
@@ -190,29 +193,33 @@ class ReaderPlayer(
 
     /**
      * Carries [option] out on the console, watching the picture frame by frame while it runs: that is how the app
-     * knows whether the game *answered* the action, and whether the picture has been sitting still since (a game
-     * waiting for input). Returns the report, or the reason it failed.
+     * knows whether the game *answered* the action, and whether the picture has settled since (a game waiting for
+     * input). Returns the report, or the reason it failed.
+     *
+     * The picture is compared within [STABLE_BITS], the same tolerance the landmark matcher uses, because menus blink
+     * and scroll: comparing frames exactly would call every animated screen "moving" and nothing would ever be read.
      */
     private suspend fun perform(option: String): Pair<ActionReport, String?> {
         val plan = ReaderActions.plan(option) ?: return ActionReport() to "unknown action '$option'"
-        var lastHash: Long? = null
+        val startHash = lastSeenHash
+        var previous: Long? = null
         var stableRun = 0
         var changed = false
-        val report = ActionReport()
         val failure = try {
             emulator.lease(option, inputProbe) {
                 // One frame at a time: the picture is looked at after each of them, so "did anything happen?" and
                 // "how long has it been still?" are measured, not guessed.
                 repeat(plan.heldFrames) {
                     step(1, plan.input())
-                    observeFrame { hash -> if (lastHash != null && hash != lastHash) changed = true; lastHash = hash }
+                    observeFrame { hash -> previous = hash }
                 }
                 repeat(plan.settleFrames) {
                     step(1)
                     observeFrame { hash ->
-                        if (hash == lastHash) stableRun++ else stableRun = 0
-                        if (lastHash != null && hash != lastHash) changed = true
-                        lastHash = hash
+                        val before = previous
+                        if (before != null && FrameHash.distance(hash, before) <= STABLE_BITS) stableRun++ else stableRun = 0
+                        if (startHash != null && FrameHash.distance(hash, startHash) > STABLE_BITS) changed = true
+                        previous = hash
                     }
                 }
             }
@@ -222,7 +229,8 @@ class ReaderPlayer(
             pause()
             "interrupted by the human"
         }
-        return report.copy(changed = changed, stableFrames = stableRun) to failure
+        previous?.let { lastSeenHash = it }
+        return ActionReport(changed = changed, stableFrames = stableRun) to failure
     }
 
     /** Feeds the frame the console just produced to [block]. */
@@ -249,9 +257,12 @@ class ReaderPlayer(
         const val DECISION_PAUSE_MILLIS = 50L
 
         /**
-         * Only ask the model to read the screen once the picture has been still this long: a game waiting for input is
+         * Only ask the model to read the screen once the picture has settled this long: a game waiting for input is
          * worth reading (and easy to read), while an animated transition is not.
          */
         const val SCREEN_READ_STABLE_FRAMES = 20
+
+        /** How many bits two frames may differ by and still count as the same picture (as the landmark matcher). */
+        const val STABLE_BITS = 6
     }
 }
