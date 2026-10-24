@@ -22,6 +22,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import me.nathanfallet.aiplayspokemon.agent.DecisionNarrator
 import me.nathanfallet.aiplayspokemon.agent.NarrationControl
+import me.nathanfallet.aiplayspokemon.agent.AgentPlayer
+import me.nathanfallet.aiplayspokemon.agent.ReaderPlayer
 import me.nathanfallet.aiplayspokemon.agent.PokemonPlayer
 import me.nathanfallet.aiplayspokemon.config.AppConfig
 import dev.kotlinds.pokemonclient.console.Button
@@ -153,13 +155,13 @@ class AppController(
      */
     val spoken: StateFlow<List<String>> = narration.spoken
 
-    private val _player = MutableStateFlow<PokemonPlayer?>(null)
+    private val _player = MutableStateFlow<AgentPlayer?>(null)
 
     /**
      * The autonomous player, or null when it can't be created: unsupported game, or the selected
      * model needs an API key that isn't configured yet.
      */
-    val player: StateFlow<PokemonPlayer?> = _player.asStateFlow()
+    val player: StateFlow<AgentPlayer?> = _player.asStateFlow()
 
     private val _mcp = MutableStateFlow<GameMcpServer?>(null)
 
@@ -379,19 +381,36 @@ class AppController(
         _player.value?.pause()
         val game = game
         val model = createModel(_backend.value, emulator)
-        _player.value = if (game != null && model != null) {
-            // In hybrid mode, the LLM settings define the planner (it may be the same as the decider).
-            PokemonPlayer(
-                emulator, game, recorder!!, model,
-                planner = createModel(DecisionBackend.LLM, emulator),
+        val reader = reader
+        _player.value = when {
+            game != null && model != null -> {
+                // In hybrid mode, the LLM settings define the planner (it may be the same as the decider).
+                PokemonPlayer(
+                    emulator, game, recorder!!, model,
+                    planner = createModel(DecisionBackend.LLM, emulator),
+                    scope = scope,
+                    settings = { _settings.value },
+                    runsDirectory = config.dataDirectory.resolve("runs"),
+                    profile = profile,
+                    walkthrough = walkthrough,
+                    narrator = { narrator() },
+                )
+            }
+            // A game whose reader was calibrated (readers/<id>.json): the same loop, its state is what the reader
+            // reads and its actions are the console's own (see docs/readers.md).
+            reader != null && model != null -> ReaderPlayer(
+                emulator = emulator,
+                reader = reader,
+                profile = profile,
+                model = model,
                 scope = scope,
                 settings = { _settings.value },
-                runsDirectory = config.dataDirectory.resolve("runs"),
-                profile = profile,
                 walkthrough = walkthrough,
+                runsDirectory = config.dataDirectory.resolve("runs"),
                 narrator = { narrator() },
             )
-        } else null
+            else -> null
+        }
     }
 
     private fun createModel(backend: DecisionBackend, emulator: ConsoleHost): DecisionModel? = when (backend) {

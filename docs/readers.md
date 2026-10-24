@@ -87,6 +87,51 @@ chapter aoe:start (Start the campaign) reached at frame 1650       # screen land
 chapter aoe:cursor (Learn the controls) reached at frame 3480      # the reader's in-mission signal
 ```
 
+## Playing through a reader
+
+`ReaderPlayer` (`agent/ReaderPlayer.kt`) is the second half of a typed agent: the same observe → decide → act loop as
+the Pokémon player, but its state is the reader's values and its actions are the console's own (`ReaderActions`:
+press a button, hold a direction, tap the touch screen, wait). The model is told the game, its objective, the chapter,
+the reader's values, and — after each action — **what changed** (`screen: 19 → 18`), plus a `stuck` note once actions
+stop changing anything. Nothing in it is game-specific: another calibrated reader, another game.
+
+What it is not: it cannot see the picture (the `vision` milestone kind and a multimodal provider would be that), it
+cannot act on anything the reader does not describe (a calibrated reader usually describes a handful of numbers), and
+its action vocabulary is coarse — a 3x3 touch grid, presses and holds. A game needing precise stylus work needs a
+better reader (a `cursor.x`/`cursor.y` observation) before the model can aim.
+
+Verifying it without a model: `dev/ReaderPlayProbe` plays a ROM headlessly with a **scripted** policy, so the loop
+itself (observe → decide → lease → execute → see what changed) can be tested on a real game:
+
+```bash
+./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.ReaderPlayProbeKt \
+  -PdevArgs="game.nds|24|desmume"
+```
+
+Against AoE it boots the game and walks it into the mission, driven only by the reader's `screen` value:
+
+```text
+#11  screen select campaign (64) · menu no menu (0)   →  press_a  →  screen: select campaign → select mission
+#12  screen select mission (231) · menu briefing (16) →  press_a  →  screen: select mission → mission briefing (83)
+#18  screen mission briefing (83) · menu no menu (0)  →  press_a  →  screen: mission briefing → loading the mission (29)
+#19  screen loading the mission (29)                  →  wait     →  screen: loading the mission → in mission (84)
+decisions: 24, error: none
+progress signal 'in-mission': true
+```
+
+With `--model=llm` the same probe asks the app's configured model instead, which is the real thing: a 9B model on an
+LM Studio box played AoE from the reader's values alone, exploring by itself when a button did nothing (the `stuck`
+note), and getting the main menu to move on its own:
+
+```text
+#7   screen main menu (19) · menu main menu (70)  →  press_a  →  nothing changed
+#8   screen main menu (19) · menu main menu (70)  →  press_down+wait  →  nothing changed
+#12  screen main menu (19) · menu main menu (70)  →  press_a  →  screen: main menu → single player menu (18)
+```
+
+A reasoning model spends its tokens thinking before answering, so give it time (and a `max_tokens` big enough for both:
+the client asks for 2048 and says so when the model answers nothing).
+
 ## What a reader is not
 
 - **It cannot invent meaning.** The calibration finds addresses and their behaviour; calling one "wood" is a judgment
@@ -95,5 +140,5 @@ chapter aoe:cursor (Learn the controls) reached at frame 3480      # the reader'
 - **It is not a replacement for a hand-written reader.** A Pokémon game's reader (pokemon-client) knows the game's
   structures, maps and menus; a calibrated reader knows the few numbers someone confirmed. For a game nobody has
   written code for, that is the difference between "the AI is blind" and "the AI can see which screen the game is on".
-- **It does not yet play the game.** The app reads a reader-based game, shows its values and verifies walkthrough
-  progress from it; acting on it — the reader player — is the next piece.
+- **The AI acts through it, not on it.** `ReaderPlayer` plays with the console's own actions; a reader never writes
+  memory, so a game that needs a cheat or a memory patch is out of scope by design.

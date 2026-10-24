@@ -55,7 +55,7 @@ import me.nathanfallet.aiplayspokemon.agent.ControlMode
 import me.nathanfallet.aiplayspokemon.agent.PlayerSettings
 import me.nathanfallet.aiplayspokemon.agent.PlayerState
 import me.nathanfallet.aiplayspokemon.agent.RunStats
-import me.nathanfallet.aiplayspokemon.agent.PokemonPlayer
+import me.nathanfallet.aiplayspokemon.agent.AgentPlayer
 import me.nathanfallet.aiplayspokemon.decision.DecisionBackend
 import me.nathanfallet.aiplayspokemon.games.AgentKind
 import me.nathanfallet.aiplayspokemon.games.DetectedRom
@@ -127,10 +127,9 @@ fun ControlPanel(
 
         val currentPlayer = player
         when {
-            controller.game == null && controller.reader != null -> Text(
-                "This game has a calibrated reader (see Reader above): the app reads its state, shows it live, and " +
-                    "verifies the walkthrough from it. Playing it through that reader is the next piece, so you can " +
-                    "play it yourself for now.",
+            controller.game == null && controller.reader != null && currentPlayer == null -> Text(
+                "This game has a calibrated reader (see Reader above): the AI plays it through it, so an API key or " +
+                    "model is all that is missing.",
             )
             controller.game == null && controller.profile.agent == AgentKind.SCREEN -> Text(
                 "No reader for this game yet: the AI would only have the screen, which is not wired up yet, so you " +
@@ -415,7 +414,7 @@ private fun ApiKeyForm(service: String, onSubmit: (String) -> Unit) {
 }
 
 @Composable
-private fun PlayerSection(player: PokemonPlayer) {
+private fun PlayerSection(player: AgentPlayer) {
     val state by player.state.collectAsState()
     var objective by remember(player) { mutableStateOf(player.objective) }
 
@@ -629,7 +628,7 @@ private fun DecisionHistory(history: List<Decision>, modifier: Modifier = Modifi
     LazyColumn(modifier) {
         items(history, key = { it.number }) { decision ->
             Text(
-                "#${decision.number}  ${decision.actions.joinToString(",").padEnd(10)} ${(decision.confidence?.let(::percent) ?: "").padStart(4)}  ${StateView.summary(decision.state)}",
+                "#${decision.number}  ${decision.actions.joinToString(",").padEnd(10)} ${(decision.confidence?.let(::percent) ?: "").padStart(4)}  ${decision.summary}",
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,

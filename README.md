@@ -144,6 +144,36 @@ chapter aoe:cursor (Learn the controls) reached at frame 3480      # the reader'
 The format, the recipes, what it can and cannot infer, and the mistakes it learned from are in
 [`docs/readers.md`](docs/readers.md).
 
+**The reader also plays the game.** `ReaderPlayer` is the same observe → decide → act loop as the Pokémon player, with
+the reader's values as its state and the console's own actions (press, hold, tap, wait) — so a game nobody wrote code
+for gets an AI that can see *and* act. Verified headlessly on AoE with a scripted policy that reads nothing but the
+reader's `screen` value:
+
+```text
+#11  screen select campaign (64) · menu no menu (0)   →  press_a  →  screen: select campaign → select mission
+#12  screen select mission (231) · menu briefing (16) →  press_a  →  screen: select mission → mission briefing (83)
+#19  screen loading the mission (29)                  →  wait     →  screen: loading the mission → in mission (84)
+decisions: 24, error: none
+progress signal 'in-mission': true
+```
+
+Run it yourself with `dev/ReaderPlayProbe` (`./gradlew devRun -PdevMain=…ReaderPlayProbeKt -PdevArgs="game.nds|24"`);
+in the app, pick the game, choose a model and press play as usual.
+
+**A real model did it too**: `--model=llm` with a 9B model on the LM Studio box (`ornith-1.0-9b`), which only ever saw
+the reader's values:
+
+```text
+#6   screen publisher logos (129) · menu no menu (0)  →  wait     →  screen: publisher logos → main menu (19)
+#7   screen main menu (19) · menu main menu (70)     →  press_a  →  nothing changed
+#8   screen main menu (19) · menu main menu (70)     →  press_down+wait  →  nothing changed
+#10  screen main menu (19) · menu main menu (70)     →  press_left+wait  →  nothing changed
+#12  screen main menu (19) · menu main menu (70)     →  press_a  →  screen: main menu → single player menu (18)
+```
+
+It explored when A did nothing (it was told it was stuck), then got the menu to move. That is the whole point: a game
+nobody wrote code for, played by a model that can only see the numbers a calibration found.
+
 ## Running from source
 
 Requirements: JDK 21 and the ROM as above. Then an API key for the AI you want to try (or

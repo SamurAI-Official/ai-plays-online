@@ -52,7 +52,9 @@ export AI_PLAYS_ONLINE_DATA_DIR="${AI_PLAYS_ONLINE_DATA_DIR:-$HOME/.ai-plays-onl
 # The decision model (edit these, or unset them to use the settings saved in the app):
 export DECISION_BACKEND="${DECISION_BACKEND:-llm}"
 export LLM_PROVIDER="${LLM_PROVIDER:-openai}"
-export LLM_MODEL="${LLM_MODEL:-qwen/qwen3.5-9b}"
+# The model loaded on the LM Studio box: it has to be one that actually loads (a name it lists in /v1/models but
+# cannot load answers HTTP 400 "Failed to load model").
+export LLM_MODEL="${LLM_MODEL:-ornith-1.0-9b}"
 export LLM_THINKING="${LLM_THINKING:-false}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://100.102.229.67:1234}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-lm-studio}"

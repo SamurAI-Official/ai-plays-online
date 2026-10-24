@@ -40,7 +40,7 @@ class DecisionNarrationEndToEndTest {
 
     private fun decision() = Decision(
         number = 7,
-        state = state,
+        summary = dev.kotlinds.pokemonclient.view.StateView.summary(state),
         actions = listOf("step(north,3)", "press(a)"),
         confidence = 0.82,
         probabilities = listOf("step(north,3)" to 0.82, "press(a)" to 0.11),

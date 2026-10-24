@@ -119,6 +119,8 @@ savestate, and `--check=<id>` follows a walkthrough with the app's own watcher a
 milestone fires on. A hash is taken over the whole frame (both screens stacked, 256x384) or a `region` of it, which is
 what makes a landmark like Age of Empires' menu usable: its whole frame changes every second (animated art), while its
 bottom screen is pixel-identical for two thousand frames. Age of Empires' two landmarks were checked with `--check`
-on both cores: the menu fires at frame 434 (melonDS) / 436 (DeSmuME) and the briefing at 1628 / 1629. The other
-chapters advance by hand from the panel until someone captures their screens; the format and the authoring steps are
-in [`docs/walkthroughs.md`](walkthroughs.md).
+on both cores: the menu fires at frame 434 (melonDS) / 436 (DeSmuME) and the briefing at 1628 / 1629. Its calibrated
+reader also **plays** it: `dev/ReaderPlayProbe` boots the game and walks it into the mission with a scripted policy
+that reads nothing but the reader's `screen` value (see [`docs/readers.md`](readers.md)). The other chapters advance by
+hand from the panel until someone captures their screens; the format and the authoring steps are in
+[`docs/walkthroughs.md`](walkthroughs.md).

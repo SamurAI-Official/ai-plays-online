@@ -19,6 +19,7 @@ import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import dev.kotlinds.pokemonclient.PokemonGame
 import dev.kotlinds.pokemonclient.actions.GameAction
 import dev.kotlinds.pokemonclient.state.GameState
+import dev.kotlinds.pokemonclient.view.StateView
 import dev.kotlinds.pokemonclient.world.Area
 import me.nathanfallet.aiplayspokemon.agent.VisionVerifier
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
@@ -43,7 +44,7 @@ class PokemonPlayer(
     emulator: ConsoleHost,
     private val game: PokemonGame,
     recorder: Recorder,
-    val model: DecisionModel,
+    override val model: DecisionModel,
     private val planner: DecisionModel?,
     private val scope: CoroutineScope,
     settings: () -> PlayerSettings,
@@ -51,10 +52,10 @@ class PokemonPlayer(
     /** The game's profile: the per-game objective and conventions the prompts carry. */
     private val profile: GameProfile = GameCatalog.generic,
     /** The walkthrough in play, shared with the panel (chapters, hints, which one we are on). */
-    val walkthrough: WalkthroughState = WalkthroughState(),
+    override val walkthrough: WalkthroughState = WalkthroughState(),
     /** The stream's voice for decisions (null: silent). Asked per use, so toggling needs no new player. */
     private val narrator: () -> DecisionNarrator? = { null },
-) {
+) : AgentPlayer {
     val session = AgentSession(emulator, game, recorder, settings, profile, walkthrough)
     private var lastChapter: String? = null
     private val settings get() = session.settings()
@@ -64,15 +65,15 @@ class PokemonPlayer(
     private var decisionsSincePlanner = 0
 
     private val _state = MutableStateFlow(PlayerState())
-    val state: StateFlow<PlayerState> = _state.asStateFlow()
+    override val state: StateFlow<PlayerState> = _state.asStateFlow()
 
-    var objective: String
+    override var objective: String
         get() = session.objective
         set(value) {
             session.objective = value
         }
 
-    fun play() {
+    override fun play() {
         if (job?.isActive == true) return
         _state.update { it.copy(playing = true, error = null) }
         job = scope.launch {
@@ -103,12 +104,12 @@ class PokemonPlayer(
         }
     }
 
-    fun pause() {
+    override fun pause() {
         job?.cancel()
         job = null
     }
 
-    fun toggle() = if (state.value.playing) pause() else play()
+    override fun toggle() = if (state.value.playing) pause() else play()
 
     /** One full observe → decide → act → remember iteration. */
     /**
@@ -155,7 +156,7 @@ class PokemonPlayer(
             is Gated.Refused -> {
                 val decision = Decision(
                     number = state.value.decisions + 1,
-                    state = turn.gameState,
+                    summary = StateView.summary(turn.gameState),
                     actions = listOf(gated.blocked.action),
                     confidence = gated.result.confidence,
                     probabilities = gated.result.probabilities.entries.sortedByDescending { it.value }.map { it.key to it.value },
@@ -189,7 +190,7 @@ class PokemonPlayer(
 
         val decision = Decision(
             number = state.value.decisions + 1,
-            state = turn.gameState,
+            summary = StateView.summary(turn.gameState),
             actions = report.performed.ifEmpty { listOf(committed.choice.key) },
             confidence = committed.result.confidence,
             probabilities = committed.result.probabilities.entries.sortedByDescending { it.value }.map { it.key to it.value },
@@ -379,8 +380,8 @@ data class PlayerState(
 /** One decision, with the model's probability for every option. */
 data class Decision(
     val number: Int,
-    /** The state the decision was made on (what the history line summarizes). */
-    val state: GameState,
+    /** The state the decision was made on, in one line (what the history shows). */
+    val summary: String,
     /** Actions carried out (the choice, then the sequence if any). */
     val actions: List<String>,
     /** How certain the model was (0..1), or null when it can't tell. */
@@ -398,4 +399,9 @@ data class Decision(
     val problem: String? = null,
     /** Why the sequence ended early by one of its rules, nothing failing (a step not offered, nothing happening...). */
     val stop: String? = null,
+    /**
+     * What the action changed in the game's own state, when the player can tell (a reader-based player compares the
+     * reader's values before and after): `screen: 19 → 18`. Null for a typed player, which knows what it did.
+     */
+    val change: String? = null,
 )

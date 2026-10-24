@@ -61,7 +61,7 @@ class RomNarrationCheckTest {
 
             val decision = Decision(
                 number = 1,
-                state = state,
+                summary = dev.kotlinds.pokemonclient.view.StateView.summary(state),
                 actions = listOf("step(north,1)"),
                 confidence = 0.75,
                 probabilities = listOf("step(north,1)" to 0.75),

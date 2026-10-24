@@ -26,12 +26,13 @@
       "type": "u8",
       "values": {
         "0": "no menu",
+        "1": "in mission",
         "70": "main menu",
         "177": "single player menu",
         "16": "mission briefing"
       },
       "confidence": 0.9,
-      "note": "0x021cfded: nonzero only while one of these menus is up. Found by --calibrate=mode (12 screens clustered, consistency 1.00) and confirmed by --watch."
+      "note": "0x021cfded: nonzero only while one of these menus is up; it read 1 from the moment the mission started (see the reader play probe, docs/readers.md). Found by --calibrate=mode (12 screens clustered, consistency 1.00) and confirmed by --watch."
     }
   ],
   "progress": [
