@@ -1,11 +1,15 @@
 package me.nathanfallet.aiplayspokemon.dev
 
 import dev.kotlinds.pokemonclient.console.Frame
+import dev.kotlinds.pokemonclient.console.MemoryRegion
 import dev.kotlinds.pokemonclient.libretro.LibretroConsole
 import dev.kotlinds.pokemonclient.libretro.LibretroCoreSpec
 import me.nathanfallet.aiplayspokemon.emulator.FrameHash
+import me.nathanfallet.aiplayspokemon.emulator.RamProbe
 import me.nathanfallet.aiplayspokemon.emulator.ScreenWatcher
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
+import me.nathanfallet.aiplayspokemon.games.MilestoneKind
+import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
 import me.nathanfallet.aiplayspokemon.games.WalkthroughCatalog
 import java.awt.image.BufferedImage
 import java.nio.file.Files
@@ -54,17 +58,17 @@ fun main(args: Array<String>) {
     var pendingFrom = 0
     val watcher = ScreenWatcher()
     val chapters = checkId?.let { WalkthroughCatalog.of(it)?.chapters ?: error("no walkthrough '$it'") } ?: emptyList()
+    val reader = checkId?.let { ReaderCatalog.of(it) } ?: null
     var chapter = 0
+    var lastFrame: Frame? = null
 
     fun onFrame(frame: Frame) {
         val index = hashes.size
         val hash = FrameHash.dHash(frame)
         hashes += hash
 
-        if (chapter < chapters.size && watcher.check(frame, chapters[chapter])) {
-            println("chapter ${chapters[chapter].id} (${chapters[chapter].title}) reached at frame $index")
-            chapter++
-        }
+        // The frame a chapter check will look at (copied: the core reuses its own buffer).
+        if (chapter < chapters.size) lastFrame = frame.copyOf()
         if (pngDirectory != null && index in pngAt) writePng(pngDirectory, index, hash, frame)
 
         // A run is a screen that doesn't change: keep its first frame, and report it once it ends.
@@ -73,6 +77,22 @@ fun main(args: Array<String>) {
             pending = frame.copyOf()
             pendingHash = hash
             pendingFrom = index
+        }
+    }
+
+    /** Follows the walkthrough: the screen for a landmark, the reader for a `memory` milestone. */
+    fun checkChapter(index: Int, console: LibretroConsole) {
+        if (chapter >= chapters.size) return
+        val milestone = chapters[chapter].milestone ?: return
+        val reached = if (milestone.kind == MilestoneKind.MEMORY) {
+            val signal = reader?.progress?.firstOrNull { it.name == milestone.signal } ?: return
+            signal.reached(RamProbe.snapshot(ramOf(console)))
+        } else {
+            watcher.check(lastFrame, chapters[chapter])
+        }
+        if (reached) {
+            println("chapter ${chapters[chapter].id} (${chapters[chapter].title}) reached at frame $index")
+            chapter++
         }
     }
 
@@ -86,8 +106,12 @@ fun main(args: Array<String>) {
     try {
         state?.let { console.loadState(Files.readAllBytes(it)) }
         // One frame at a time: the script decides what is held on each of them (`runFrame` is not in the published
-        // pokemon-client artifact yet).
-        for (index in 0 until frames) console.step(1, script.inputAt(index))
+        // pokemon-client artifact yet). The walkthrough is checked every few frames: a check reads the frame, and a
+        // `memory` milestone reads 4 MB of RAM.
+        for (index in 0 until frames) {
+            console.step(1, script.inputAt(index))
+            if (index % CHECK_EVERY == 0) checkChapter(index, console)
+        }
     } finally {
         console.close()
     }
@@ -116,9 +140,12 @@ private class Run(val firstFrame: Int, val lastFrame: Int, val hash: Long, val f
 /** Only runs at least this long are worth looking at: shorter ones are transitions and animations. */
 private const val MIN_RUN = 20
 
-/** The value of `--flag=value` in [args], or null. */
-private fun Array<String>.value(flag: String): String? =
-    firstOrNull { it.startsWith(flag) }?.removePrefix(flag)?.takeIf { it.isNotBlank() }
+/** How often the walkthrough is followed while the run goes on (a `memory` milestone reads 4 MB of RAM). */
+private const val CHECK_EVERY = 10
+
+/** The main RAM of the frame the console just finished, as the readers read it. */
+private fun ramOf(console: LibretroConsole): ByteArray =
+    ByteArray(console.memorySize(MemoryRegion.MAIN_RAM)).also { console.read(MemoryRegion.MAIN_RAM, 0, it.size, it) }
 
 /** Writes one frame as PNG, so an author can see which screen a hash belongs to. */
 private fun writePng(directory: Path, frame: Int, hash: Long, source: Frame) {

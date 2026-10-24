@@ -44,7 +44,11 @@
         "The D-pad pans the map and moves the cursor; A selects and confirms; B cancels.",
         "L and R cycle between your units and buildings.",
         "The touch screen can also select units: tapping a unit selects it, tapping the ground moves it."
-      ]
+      ],
+      "milestone": {
+        "kind": "memory",
+        "signal": "in-mission"
+      }
     },
     {
       "id": "aoe:economy",

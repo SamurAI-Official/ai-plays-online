@@ -84,6 +84,7 @@ fun ControlPanel(
         Text("AI plays Online", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         GameSelector(controller, currentRom, games, onSelectGame, onBrowse, onChangeGame)
         WalkthroughSection(controller)
+        ReaderSection(controller)
         Text(
             "${controller.profile.shortTitle} · ${controller.emulator.info.name} · ${"%.0f".format(status.measuredFps)} fps",
             style = MaterialTheme.typography.bodySmall,
@@ -126,9 +127,15 @@ fun ControlPanel(
 
         val currentPlayer = player
         when {
+            controller.game == null && controller.reader != null -> Text(
+                "This game has a calibrated reader (see Reader above): the app reads its state, shows it live, and " +
+                    "verifies the walkthrough from it. Playing it through that reader is the next piece, so you can " +
+                    "play it yourself for now.",
+            )
             controller.game == null && controller.profile.agent == AgentKind.SCREEN -> Text(
-                "No typed reader for this game yet: the AI would only have the screen, which is not wired up yet, so " +
-                    "you can play it yourself. Its profile (objective and conventions) is in the game picker.",
+                "No reader for this game yet: the AI would only have the screen, which is not wired up yet, so you " +
+                    "can play it yourself. Its profile (objective and conventions) is in the game picker, and a " +
+                    "reader can be calibrated with dev/RamProbeTool (docs/readers.md).",
             )
             backend == DecisionBackend.MCP -> McpSection(controller)
             currentPlayer == null -> ApiKeyForm(controller.missingApiKey ?: "the model", controller::setApiKey)
@@ -773,6 +780,37 @@ private fun agentLabel(agent: AgentKind): String = when (agent) {
  * (see [ScreenWatcher]), and can always be pinned here — a human steering the run, or correcting a guess. The text
  * is data (see `docs/walkthroughs.md`): shipped with the app, overridable in `<data>/walkthroughs/`.
  */
+/**
+ * What the app can read from this game, live.
+ *
+ * A game with a calibrated reader (`readers/<id>.json`, see `docs/readers.md`) is a typed game even though nobody
+ * wrote a reader for it in code: the panel shows every value the reader reads, so it is visible what the app knows
+ * (and what it does not) — a value that never changes is a value that is not working yet.
+ */
+@Composable
+private fun ReaderSection(controller: AppController) {
+    val reader = controller.reader ?: return
+    val values by controller.readerValues.collectAsState()
+    HorizontalDivider()
+    Text("Reader", fontWeight = FontWeight.Bold)
+    Text(
+        "Calibrated for this game (${reader.provenance}): ${reader.observations.size} values, " +
+            "${reader.progress.size} progress signals.",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    for (observation in reader.observations) {
+        Text(
+            "${observation.name}: ${values[observation.name] ?: "—"}",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+    reader.notes.takeIf { it.isNotBlank() }?.let { notes ->
+        Text(notes, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
 @Composable
 private fun WalkthroughSection(controller: AppController) {
     val walkthrough by controller.walkthrough.walkthrough.collectAsState()

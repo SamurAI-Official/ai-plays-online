@@ -1,0 +1,47 @@
+{
+  "id": "age-of-empires-aok",
+  "provenance": "calibrated",
+  "observations": [
+    {
+      "name": "screen",
+      "address": 37251014,
+      "type": "u8",
+      "values": {
+        "0": "boot",
+        "129": "publisher logos",
+        "19": "main menu",
+        "18": "single player menu",
+        "64": "select campaign",
+        "231": "select mission",
+        "83": "mission briefing",
+        "29": "loading the mission",
+        "84": "in mission"
+      },
+      "confidence": 1.0,
+      "note": "0x023867c6: the game's own screen id. Watched over a 6000-frame run (dev/RamProbeTool --watch): it changed exactly at each screen and held for thousands of frames (84 while the mission ran)."
+    },
+    {
+      "name": "menu",
+      "address": 35454445,
+      "type": "u8",
+      "values": {
+        "0": "no menu",
+        "70": "main menu",
+        "177": "single player menu",
+        "16": "mission briefing"
+      },
+      "confidence": 0.9,
+      "note": "0x021cfded: nonzero only while one of these menus is up. Found by --calibrate=mode (12 screens clustered, consistency 1.00) and confirmed by --watch."
+    }
+  ],
+  "progress": [
+    {
+      "name": "in-mission",
+      "address": 37251014,
+      "type": "u8",
+      "equals": 84,
+      "note": "the mission is running: screen id 84, held for 2250 frames while the mission played"
+    }
+  ],
+  "notes": "Calibrated with dev/RamProbeTool against Age of Empires: The Age of Kings (USA), DeSmuME and melonDS: `--calibrate=mode` over a scripted route (main menu, single player, campaign, mission, briefing, mission) found the candidates, `--watch` confirmed these two. The screen id is what makes this game typed: the AI can see which screen the game is on, and the walkthrough verifies its chapters from it. Values not listed here are screens nobody calibrated yet: add them after running the same route through the tool. The in-mission screen itself is not a landmark (a moving map, see docs/games.md), so memory is the only way to tell it."
+}

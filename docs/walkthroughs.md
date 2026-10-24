@@ -55,6 +55,8 @@ walkthrough into your data directory, ready to change; `provenance` in the file 
     consecutive checks. Cheap, offline, no model call.
   - `vision`: a question for the multimodal provider (`question`, at most once every `everySeconds`). Declared in the
     data, not used yet: it belongs to the screen agent.
+  - `memory`: the game's own state, read through its **reader** (`signal`, a name in `readers/<id>.json`). This is how
+    a game nobody wrote a reader for in code still gets verified progress — see [`docs/readers.md`](readers.md).
 - A chapter without a milestone is advanced by hand from the panel (chapter dropdown) or by the model.
 
 ## Authoring a chapter

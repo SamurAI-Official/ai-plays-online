@@ -109,7 +109,7 @@ Adding a game means adding a profile (built-in or a user override in `<data>/gam
 | Final Fantasy III | 5 | the panel | — |
 | Final Fantasy IV | 5 | the panel | — |
 | Phantasy Star 0 | 6 | the title screen, then the panel | `dhash:2362248c00d82000` (frame 1035, 220 frames) |
-| Age of Empires: The Age of Kings | 6 | the front-end screen, then the mission briefing, then the panel | `dhash:05d5c9ab8ae5552b` (bottom screen, menu from frame ~400) and `dhash:9b3d2bcacce1a561` (briefing, top screen) |
+| Age of Empires: The Age of Kings | 6 | the front-end screen, the mission briefing, then the reader's `in-mission` signal | `dhash:05d5c9ab8ae5552b` (bottom screen, menu from frame ~400) and `dhash:9b3d2bcacce1a561` (briefing, top screen) |
 
 A landmark is a 64-bit difference hash of the screen, captured with `dev/FrameHashTool`
 (`./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.FrameHashToolKt -PdevArgs="rom.nds|2600|melonds"`),

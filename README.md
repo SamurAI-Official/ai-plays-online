@@ -113,7 +113,7 @@ of the same game still works (and may be untested).
 | Final Fantasy III | `AFFE` | screen only | 5 chapters, hints only | melonDS ❌ (fails at frame 0) / DeSmuME ✅ | boots on both; use DeSmuME or lockstep |
 | Final Fantasy IV | `YF4E` | screen only | 5 chapters, hints only | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
 | Phantasy Star 0 | `C24E` | screen only | 6 chapters, front-end landmark captured | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
-| Age of Empires: The Age of Kings | `AEKE` | screen only | 6 chapters, front-end + briefing landmarks | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
+| Age of Empires: The Age of Kings | `AEKE` | typed (calibrated reader) | 6 chapters, front-end + briefing landmarks, in-mission signal | melonDS ✅ / DeSmuME ✅ | 600-frame determinism per core |
 
 All seven boot and run on both patched cores; 12 of the 14 game/core combinations pass a 600-frame save/load
 determinism check (the two that do not are melonDS's, and only for those two titles). The raw numbers — state size,
@@ -122,6 +122,27 @@ commands that produced them. Local wireless is measured but not yet reached by s
 needs a savestate taken inside a multiplayer screen (procedure in the same document).
 
 Other DS games run too: an unknown ROM gets the generic profile, which is playable with the human in control.
+
+## Typed readers: how a game nobody wrote code for becomes typed
+
+The AI plays best when the app can read the game's own state. For Pokémon that reader is code (pokemon-client knows
+the games' structures). For any other game it is **data**: `readers/<id>.json` says which addresses hold what, and the
+app then treats that game as typed — its values are shown in the panel, and a walkthrough chapter can be verified from
+it (`kind: memory`) instead of from a picture of the screen.
+
+That data is not written by hand from a debugger: `dev/RamProbeTool` **calibrates** it by driving the game and watching
+its memory, looking for the address that says which screen is up, one that counts up on its own, one that reacts to a
+press. Age of Empires is the worked example — `--calibrate=mode` found the address, `--watch` confirmed it, and its
+`in-mission` signal now verifies a chapter:
+
+```text
+chapter aoe:boot (Boot to the front end) reached at frame 460      # screen landmark
+chapter aoe:start (Start the campaign) reached at frame 1650       # screen landmark
+chapter aoe:cursor (Learn the controls) reached at frame 3480      # the reader's in-mission signal
+```
+
+The format, the recipes, what it can and cannot infer, and the mistakes it learned from are in
+[`docs/readers.md`](docs/readers.md).
 
 ## Running from source
 

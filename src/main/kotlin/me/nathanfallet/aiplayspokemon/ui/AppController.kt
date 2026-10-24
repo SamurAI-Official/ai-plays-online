@@ -49,6 +49,10 @@ import me.nathanfallet.aiplayspokemon.emulator.ScreenWatcher
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import java.nio.file.Path
 import me.nathanfallet.aiplayspokemon.games.GameProfile
+import me.nathanfallet.aiplayspokemon.games.MilestoneKind
+import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
+import me.nathanfallet.aiplayspokemon.games.ReaderSpec
+import me.nathanfallet.aiplayspokemon.games.AgentKind
 import me.nathanfallet.aiplayspokemon.games.WalkthroughState
 import me.nathanfallet.aiplayspokemon.games.WalkthroughCatalog
 
@@ -117,6 +121,19 @@ class AppController(
     private val _narrationVoice = MutableStateFlow(config.narrationVoice)
 
     val narrationVoice: StateFlow<String> = _narrationVoice.asStateFlow()
+
+    /**
+     * What the app can read from this game: its calibrated reader (`readers/<id>.json`, see `docs/readers.md`), or
+     * null when the game has none. A game with a reader is a typed game ([profile] was switched to
+     * [AgentKind.TYPED] when it was opened), and its values are shown live in the panel and used to verify a
+     * chapter whose milestone is `kind: memory`.
+     */
+    val reader: ReaderSpec? = ReaderCatalog.of(profile, config.dataDirectory)
+
+    private val _readerValues = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** The reader's observations as they read right now (name → value), for the panel. */
+    val readerValues: StateFlow<Map<String, String>> = _readerValues.asStateFlow()
 
     /**
      * The narration control: the voice saying the decisions, and the lines it really said. It owns the
@@ -412,20 +429,39 @@ class AppController(
         if (panelSession == null) return
         while (scope.isActive) {
             _panel.value = runCatching { withPanelSession { it.describeWithState() } }.getOrNull()?.let { (state, view) -> PanelView(StateView.summary(state), view) }
+            refreshReader()
             watchScreen()
             delay(250)
         }
     }
 
+    /** Reads the game's reader, if it has one: what the panel shows live, and what [watchScreen] checks. */
+    private suspend fun refreshReader() {
+        val reader = reader ?: return
+        if (reader.observations.isEmpty()) return
+        _readerValues.value = runCatching {
+            emulator.observe { memory -> ReaderCatalog.observe(reader, memory) }
+        }.getOrElse { _readerValues.value }
+    }
+
     /**
      * Looks at the frame the console just produced for the current chapter's landmark (a few times a second, see
      * [refreshPanel]). When it matches, the chapter is reached and the walkthrough moves on — this is how a game we
-     * only see the screen of advances on its own. Typed games never get here (their own progress is exact).
+     * only see the screen of advances on its own. A chapter whose milestone is `kind: memory` is checked against the
+     * game's reader instead: its progress is the game's own state, not a picture of it. Typed games never get here
+     * (their own progress is exact).
      */
-    private fun watchScreen() {
+    private suspend fun watchScreen() {
         if (!walkthrough.autoAdvance) return
         val chapter = walkthrough.chapter ?: return
-        if (chapter.milestone == null) return
+        val milestone = chapter.milestone ?: return
+        if (milestone.kind == MilestoneKind.MEMORY) {
+            val signal = reader?.progress?.firstOrNull { it.name == milestone.signal } ?: return
+            if (emulator.observe { memory -> signal.reached(memory) }) {
+                walkthrough.advance("the game's own state (${signal.name})")
+            }
+            return
+        }
         if (screenWatcher.check(emulator.frames.value, chapter)) {
             walkthrough.advance("seen on screen")
         }

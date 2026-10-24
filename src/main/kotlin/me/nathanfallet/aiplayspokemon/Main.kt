@@ -20,6 +20,7 @@ import kotlinx.coroutines.runBlocking
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import dev.kotlinds.pokemonclient.PokemonGames
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
+import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
 import me.nathanfallet.aiplayspokemon.ui.App
 import me.nathanfallet.aiplayspokemon.ui.AppController
 import me.nathanfallet.aiplayspokemon.ui.GamePickerScreen
@@ -120,8 +121,9 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
                 config.dataDirectory,
             )
             val bytes = rom.readBytes()
-            // What the app knows about this ROM: its own profile, or the generic one (screen only).
-            val profile = GameCatalog.detect(bytes, config.dataDirectory)
+            // What the app knows about this ROM: its own profile, or the generic one (screen only). A game with a
+            // calibrated reader (`readers/<id>.json`) is a typed game: the app can read its state (see docs/readers.md).
+            val profile = ReaderCatalog.apply(GameCatalog.detect(bytes, config.dataDirectory), config.dataDirectory)
             val game = PokemonGames.detect(bytes)
             println("ai-plays-online: ${profile.title} (${profile.agent}) on ${emulator.info.name}")
             if (config.startMuted) emulator.setMuted(true)

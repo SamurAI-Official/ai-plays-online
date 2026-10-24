@@ -74,6 +74,9 @@ data class WalkthroughChapter(
  * `frameHash` and `template` are cheap and offline: the frame is downscaled to a 16x16 grayscale
  * [dHash][me.nathanfallet.aiplayspokemon.emulator.dHash] and compared with the references (a small Hamming distance
  * tolerates animations). `vision` asks the multimodal provider instead, at most once every [everySeconds].
+ * `memory` doesn't look at the screen at all: it reads the game's own state through its reader
+ * (`readers/<id>.json`, see `docs/readers.md`), which is how a game that has no reader in code still gets verified
+ * progress.
  */
 @Serializable
 data class Milestone(
@@ -90,6 +93,8 @@ data class Milestone(
     val question: String = "",
     /** `vision` only: how often the question may be asked again. */
     val everySeconds: Int = 20,
+    /** `memory` only: the name of the reader's progress signal that says the chapter is reached. */
+    val signal: String? = null,
 )
 
 @Serializable
@@ -102,4 +107,8 @@ enum class MilestoneKind {
 
     @SerialName("vision")
     VISION,
+
+    /** The game's own state, read from memory through its reader (`signal`). */
+    @SerialName("memory")
+    MEMORY,
 }

@@ -59,9 +59,14 @@ fun main(args: Array<String>) {
     games.forEach { game ->
         val profile = game.profile
         val walkthrough = me.nathanfallet.aiplayspokemon.games.WalkthroughCatalog.of(profile, config.dataDirectory)
+        // A game with a reader is a typed game (what the app does when it opens the ROM, see Main.kt).
+        val reader = me.nathanfallet.aiplayspokemon.games.ReaderCatalog.of(profile, config.dataDirectory)
+        val typed = me.nathanfallet.aiplayspokemon.games.ReaderCatalog.apply(profile, config.dataDirectory)
         println(
-            "- ${profile.title} [${profile.gameCode}] · ${profile.agent} · " +
-                "walkthrough: ${walkthrough?.chapters?.size ?: 0} chapters · ${game.path.fileName}",
+            "- ${profile.title} [${profile.gameCode}] · ${typed.agent} · " +
+                "walkthrough: ${walkthrough?.chapters?.size ?: 0} chapters · " +
+                "reader: ${reader?.let { "${it.observations.size} values, ${it.progress.size} signals (${it.provenance})" } ?: "none"} · " +
+                game.path.fileName,
         )
     }
     println("--- the app would start on the picker (no game loaded) ---")
