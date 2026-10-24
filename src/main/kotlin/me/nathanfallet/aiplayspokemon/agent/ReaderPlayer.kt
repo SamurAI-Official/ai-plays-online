@@ -17,6 +17,7 @@ import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
 import me.nathanfallet.aiplayspokemon.decision.DecisionException
 import me.nathanfallet.aiplayspokemon.decision.DecisionModel
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
+import me.nathanfallet.aiplayspokemon.emulator.FrameHash
 import me.nathanfallet.aiplayspokemon.games.GameProfile
 import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
 import me.nathanfallet.aiplayspokemon.games.ReaderSpec
@@ -49,6 +50,7 @@ class ReaderPlayer(
     private val runsDirectory = runsDirectory
     private var job: Job? = null
     private val history = ArrayDeque<String>()
+    private val screenState = ScreenState()
 
     private val _state = MutableStateFlow(PlayerState())
     override val state: StateFlow<PlayerState> = _state.asStateFlow()
@@ -75,16 +77,29 @@ class ReaderPlayer(
         var stagnation = 0
         var lastAction: String? = null
         var lastChange: String? = null
+        var changedByAction = false
+        var stableFrames = 0
 
         while (scope.isActive && state.value.playing) {
             val before = observe()
             val chapter = walkthrough.chapter
+            // What the picture shows: how it moved while the last action ran, whether it matches a walkthrough
+            // landmark, and the model's own reading of the screenshot — asked only when the picture has settled, since
+            // that is when a reading is both useful and reliable (and it is one more model call).
+            val frame = emulator.frames.value
+            val settled = stableFrames >= SCREEN_READ_STABLE_FRAMES
+            if (settings().readScreen && model.generative && settled) {
+                screenState.read(model, frame) { failure -> emulator.systemLog.add("screen read failed: $failure") }
+            }
+            val view = screenState.view(frame, chapter, changedByAction, stableFrames)
+            _state.update { it.copy(screenRead = view.summary()) }
             val request = ChoiceRequest(
                 state = ReaderPrompt.state(
                     profile = profile,
                     objective = objective,
                     chapter = chapter,
                     values = before,
+                    screen = view,
                     lastAction = lastAction,
                     lastChange = lastChange,
                     history = history.toList(),
@@ -115,18 +130,22 @@ class ReaderPlayer(
 
             val performed = mutableListOf<String>()
             var problem: String? = null
+            var report = ActionReport()
             for (option in sequence) {
-                val outcome = perform(option)
+                val (actionReport, outcome) = perform(option)
+                report = actionReport
                 performed += option
                 if (outcome != null) {
                     problem = outcome
                     break
                 }
             }
+            changedByAction = report.changed
+            stableFrames = report.stableFrames
 
             val after = observe()
             val change = ReaderActions.describeChange(before, after)
-            val summary = ReaderActions.summary(before)
+            val summary = ReaderActions.summary(before) + " | " + view.summary()
             stagnation = if (change == "nothing changed") stagnation + 1 else 0
             lastAction = performed.joinToString(" then ")
             lastChange = change
@@ -169,13 +188,33 @@ class ReaderPlayer(
     private suspend fun observe(): Map<String, String> =
         runCatching { emulator.observe { memory -> ReaderCatalog.observe(reader, memory) } }.getOrDefault(emptyMap())
 
-    /** Carries [option] out on the console. Returns why it failed, or null when it went through. */
-    private suspend fun perform(option: String): String? {
-        val plan = ReaderActions.plan(option) ?: return "unknown action '$option'"
-        return try {
+    /**
+     * Carries [option] out on the console, watching the picture frame by frame while it runs: that is how the app
+     * knows whether the game *answered* the action, and whether the picture has been sitting still since (a game
+     * waiting for input). Returns the report, or the reason it failed.
+     */
+    private suspend fun perform(option: String): Pair<ActionReport, String?> {
+        val plan = ReaderActions.plan(option) ?: return ActionReport() to "unknown action '$option'"
+        var lastHash: Long? = null
+        var stableRun = 0
+        var changed = false
+        val report = ActionReport()
+        val failure = try {
             emulator.lease(option, inputProbe) {
-                if (plan.heldFrames > 0) step(plan.heldFrames, plan.input())
-                if (plan.settleFrames > 0) step(plan.settleFrames)
+                // One frame at a time: the picture is looked at after each of them, so "did anything happen?" and
+                // "how long has it been still?" are measured, not guessed.
+                repeat(plan.heldFrames) {
+                    step(1, plan.input())
+                    observeFrame { hash -> if (lastHash != null && hash != lastHash) changed = true; lastHash = hash }
+                }
+                repeat(plan.settleFrames) {
+                    step(1)
+                    observeFrame { hash ->
+                        if (hash == lastHash) stableRun++ else stableRun = 0
+                        if (lastHash != null && hash != lastHash) changed = true
+                        lastHash = hash
+                    }
+                }
             }
             null
         } catch (interrupted: ActionInterruptedException) {
@@ -183,7 +222,16 @@ class ReaderPlayer(
             pause()
             "interrupted by the human"
         }
+        return report.copy(changed = changed, stableFrames = stableRun) to failure
     }
+
+    /** Feeds the frame the console just produced to [block]. */
+    private inline fun observeFrame(block: (Long) -> Unit) {
+        emulator.frames.value?.let { frame -> block(FrameHash.dHash(frame)) }
+    }
+
+    /** What one action did to the picture. */
+    private data class ActionReport(val changed: Boolean = false, val stableFrames: Int = 0)
 
     override fun toggle() = if (state.value.playing) pause() else play()
 
@@ -199,5 +247,11 @@ class ReaderPlayer(
 
         /** A breather between two decisions, so the panel and the screen can keep up. */
         const val DECISION_PAUSE_MILLIS = 50L
+
+        /**
+         * Only ask the model to read the screen once the picture has been still this long: a game waiting for input is
+         * worth reading (and easy to read), while an animated transition is not.
+         */
+        const val SCREEN_READ_STABLE_FRAMES = 20
     }
 }

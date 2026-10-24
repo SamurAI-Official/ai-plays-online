@@ -102,6 +102,7 @@ fun main(args: Array<String>) = runBlocking {
     val reached = inMission?.let { signal -> emulator.observe { memory -> signal.reached(memory) } }
     println("decisions: ${player.state.value.decisions}, error: ${player.state.value.error ?: "none"}")
     println("progress signal 'in-mission': $reached")
+    emulator.systemLog.entries.value.filter { it.contains("screen read") }.takeLast(3).forEach { println("log: $it") }
     emulator.close()
     scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     println("== done ==")

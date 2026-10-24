@@ -95,10 +95,13 @@ press a button, hold a direction, tap the touch screen, wait). The model is told
 the reader's values, and — after each action — **what changed** (`screen: 19 → 18`), plus a `stuck` note once actions
 stop changing anything. Nothing in it is game-specific: another calibrated reader, another game.
 
-What it is not: it cannot see the picture (the `vision` milestone kind and a multimodal provider would be that), it
-cannot act on anything the reader does not describe (a calibrated reader usually describes a handful of numbers), and
-its action vocabulary is coarse — a 3x3 touch grid, presses and holds. A game needing precise stylus work needs a
-better reader (a `cursor.x`/`cursor.y` observation) before the model can aim.
+What it is not: it cannot read the picture by itself, so `ScreenState` gives it what the app *can* say — whether the
+picture changed while it acted, how long it has been still (a still picture is a game waiting for input), which
+walkthrough landmark it matches, and, when the model has vision, its own one-line reading of the screenshot
+(`dialogue`, `menu`, `field`, `loading`, `intro`). A model without vision answers `unknown` and the request says so.
+Beyond that it cannot act on anything the reader does not describe, and its action vocabulary is coarse — a 3x3 touch
+grid, presses and holds. A game needing precise stylus work needs a better reader (a `cursor.x`/`cursor.y` observation)
+before the model can aim.
 
 Verifying it without a model: `dev/ReaderPlayProbe` plays a ROM headlessly with a **scripted** policy, so the loop
 itself (observe → decide → lease → execute → see what changed) can be tested on a real game:
@@ -131,6 +134,38 @@ note), and getting the main menu to move on its own:
 
 A reasoning model spends its tokens thinking before answering, so give it time (and a `max_tokens` big enough for both:
 the client asks for 2048 and says so when the model answers nothing).
+
+## What the model is told about the picture
+
+A reader reads memory; it cannot say "a dialogue box is open and it wants A". `ScreenState` closes that gap, and
+everything it knows goes into the request's `screen` block:
+
+```json
+"screen": {
+  "looks_like": "dialogue",
+  "stable_frames": 92,
+  "changed_by_your_action": true,
+  "landmark": "Start the campaign",
+  "what_that_means": "this is the screen of “Start the campaign”"
+}
+```
+
+- **`stable_frames` and `changed_by_your_action`** are measured *while the action runs*, frame by frame, not guessed
+  between decisions: `stable 30 frames · nothing moved` means the press did nothing visible, `stable 81 frames ·
+  answered you` means the game moved on. This is what stops an agent believing it is stuck on a boot screen while the
+  game is animating: a stable picture is a game *waiting for input*, a moving one is loading, and either way the app
+  says so.
+- **`looks_like`** is the model's own reading of the screenshot the app attaches to every request: the app asks it,
+  with constrained options (`dialogue`, `menu`, `field`, `loading`, `intro`, `unknown`), and caches the answer per
+  picture. It is only asked when the picture has settled (20 frames), because that is when a reading is useful and
+  reliable. A model that cannot see images answers `unknown`, and the request then says so outright:
+  *"the model answered that it cannot see the screenshot: only `reader` is available... pick a model with vision"*.
+  The panel shows the same line under **Screen**, so a user can see at a glance whether their model reads the screen.
+- **`landmark`** names the screen outright when it matches a walkthrough chapter's captured landmark.
+
+The **Read the screen** switch (Experiments) turns the reading off; the stability, the change and the landmark match
+stay (they are free). Nothing here needs a vision model to be useful, but only a vision model can read what a dialogue
+box *says*.
 
 ## What a reader is not
 

@@ -372,6 +372,8 @@ private fun ExperimentSettings(controller: AppController, backend: DecisionBacke
         Triple(if (backend == DecisionBackend.MCP) "Reasoning required (MCP)" else "Reasoning (LLM)", settings.reasoning) { s: PlayerSettings, v: Boolean -> s.copy(reasoning = v) }
             .takeIf { llmInLoop || backend == DecisionBackend.MCP },
         Triple("Notes (LLM)", settings.modelNotes) { s: PlayerSettings, v: Boolean -> s.copy(modelNotes = v) }.takeIf { llmInLoop },
+        // Reader games: the model is asked what the picture shows (a model without vision answers `unknown`).
+        Triple("Read the screen", settings.readScreen) { s: PlayerSettings, v: Boolean -> s.copy(readScreen = v) }.takeIf { llmInLoop },
         Triple("Explored map", settings.exploredMap) { s: PlayerSettings, v: Boolean -> s.copy(exploredMap = v) },
         Triple("Solve movement puzzles", settings.solvePuzzles) { s: PlayerSettings, v: Boolean -> s.copy(solvePuzzles = v) }
             .takeIf { settings.mode != ControlMode.PURE },
@@ -442,6 +444,9 @@ private fun PlayerSection(player: AgentPlayer) {
     )
 
     Stats(state)
+    state.screenRead?.let { screen ->
+        Text("Screen: $screen", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+    }
     state.note?.let { Text("Note: $it", style = MaterialTheme.typography.bodySmall) }
     state.plannerGoal?.let { Text("Planner goal: $it", style = MaterialTheme.typography.bodySmall) }
     Milestones(state.milestones)

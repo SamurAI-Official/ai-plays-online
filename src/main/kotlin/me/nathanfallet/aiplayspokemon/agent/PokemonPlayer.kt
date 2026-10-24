@@ -370,6 +370,8 @@ data class PlayerState(
     val costUsd: Double = 0.0,
     val totalLatencyMillis: Long = 0,
     val milestones: List<RunStats.Milestone> = emptyList(),
+    /** What the model can see of the picture right now (a reader game: the screen reading and its stability). */
+    val screenRead: String? = null,
     val note: String? = null,
     val plannerGoal: String? = null,
     val error: String? = null,

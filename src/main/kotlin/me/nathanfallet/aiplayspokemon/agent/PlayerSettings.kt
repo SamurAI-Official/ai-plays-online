@@ -29,6 +29,12 @@ data class PlayerSettings(
     val reasoning: Boolean = true,
     /** Generative models keep a note (goal/plan) they rewrite at will, shown back every time. */
     val modelNotes: Boolean = true,
+
+    /**
+     * Ask the model to read the screenshot each time the picture changes (a model without vision answers `unknown`, and
+     * the prompt then says so). Off: the prompt still carries how stable the picture is and which landmark it matches.
+     */
+    val readScreen: Boolean = true,
     /** Add the map of everything seen so far on the current map (not only the area around the player). */
     val exploredMap: Boolean = true,
     /**

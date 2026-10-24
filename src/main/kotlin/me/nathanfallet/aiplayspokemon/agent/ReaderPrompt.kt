@@ -31,6 +31,7 @@ object ReaderPrompt {
         objective: String,
         chapter: WalkthroughChapter?,
         values: Map<String, String>,
+        screen: ScreenState.View?,
         lastAction: String?,
         lastChange: String?,
         history: List<String>,
@@ -40,6 +41,22 @@ object ReaderPrompt {
         put("objective", objective)
         putJsonObject("reader") {
             for ((name, value) in values) put(name, value)
+        }
+        screen?.let { view ->
+            putJsonObject("screen") {
+                put("looks_like", view.looksLike ?: "not read")
+                put("stable_frames", view.stableFrames)
+                put("changed_by_your_action", view.changedByAction)
+                view.landmark?.let { put("landmark", it) }
+                view.note?.let { put("what_that_means", it) }
+                if (view.blind) {
+                    put(
+                        "warning",
+                        "the model answered that it cannot see the screenshot: only `reader` is available, so " +
+                            "dialogue boxes and menus cannot be read. Pick a model with vision to see the screen.",
+                    )
+                }
+            }
         }
         chapter?.let { current ->
             putJsonObject("walkthrough") {
@@ -60,18 +77,20 @@ object ReaderPrompt {
         if (stagnation > 0) {
             put(
                 "stuck",
-                "$stagnation actions in a row changed nothing: do something different (another button, a wait, " +
-                    "a different part of the screen).",
+                "$stagnation actions in a row changed nothing in `reader`: do something different (another button, " +
+                    "a wait, a different part of the screen). If `screen.what_that_means` says the game is waiting " +
+                    "for input, that is the answer: press what it waits for.",
             )
         }
     }
 
     /** What the model is told to do, on top of its own objective and the game's conventions. */
     fun instructions(profile: GameProfile, chapter: WalkthroughChapter?, generative: Boolean): String = buildString {
-        append("You are playing ${profile.shortTitle} on a Nintendo DS, through a reader calibrated for this game: ")
-        append("`reader` holds the values it reads (its `screen` is which screen the game is on). ")
-        append("You cannot see the picture: you act by pressing buttons and tapping the touch screen, and you learn ")
-        append("what happened from `last_action.result`. ")
+        append("You are playing ${profile.shortTitle} on a Nintendo DS. ")
+        append("`reader` is what a calibrated memory reader sees (its `screen` value is which screen the game is on). ")
+        append("`screen` is what the picture shows and how it is moving: use it — a dialogue box wants A, a menu wants ")
+        append("the D-pad, a stable picture means the game is waiting for you, and a picture that keeps changing is ")
+        append("loading or animating. ")
         append(profile.conventions)
         if (chapter != null) {
             append(" Follow the walkthrough: its `goal` is what to achieve now, its `hints` are how. ")
@@ -79,7 +98,7 @@ object ReaderPrompt {
         }
         append("Choose one of `options`. ")
         if (generative) {
-            append("Think about what the reader says and what your last action changed, then answer. ")
+            append("Think about the reader, the picture and what your last action changed, then answer. ")
             append("Do not repeat an action that just did nothing unless the game is clearly waiting for it.")
         }
     }
