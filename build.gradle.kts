@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "me.nathanfallet.aiplayspokemon"
-version = "0.1.0"
+version = "1.0.0"
 
 kotlin {
     jvmToolchain(21)
@@ -60,6 +60,13 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "AI Plays Online"
             packageVersion = "1.0.0"
+            macOS {
+                bundleID = "me.nathanfallet.aiplaysonline"
+                dockName = "AI Plays Online"
+                appCategory = "public.app-category.games"
+                minimumSystemVersion = "11.0"
+                iconFile.set(project.file("launcher/icon.icns"))
+            }
         }
     }
 }

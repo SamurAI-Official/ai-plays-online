@@ -1,8 +1,6 @@
-# Attaches the universal jar (runs on macOS, Linux and Windows with Java 21) to every GitHub release.
-#
-# Triggered when a release is published (create the tag with the release, or publish a release on an existing tag),
-# or by hand for an existing release (Actions → Release jar → Run workflow, with its tag) to rebuild its jar.
-name: Release jar
+# Attaches a native Apple Silicon macOS app and the cross-platform jar to every GitHub release.
+# Run manually for an existing release from Actions → Release artifacts → Run workflow (with its tag).
+name: Release artifacts
 
 on:
   release:
@@ -10,14 +8,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag of the existing release to attach the jar to (e.g. v0.2.0)"
+        description: "Tag of the existing release to attach the artifacts to (e.g. v1.0.0)"
         required: true
 
 permissions:
-  contents: write # upload the jar to the release
+  contents: write # upload artifacts to the release
 
 jobs:
   jar:
+    name: Cross-platform JAR
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -36,23 +35,77 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # In development the app uses a -SNAPSHOT of pokemon-client from mavenLocal, which CI doesn't have: a release
-      # builds against the published version of the same number (0.1.1-SNAPSHOT → 0.1.1 on Maven Central). Nothing
-      # changes when the tag already names a released version.
+      # CI has no mavenLocal snapshot: releases build against the published version of the same number.
       - name: Use the released pokemon-client
         run: |
           sed -i -E 's/^(pokemon-client = "[^"]+)-SNAPSHOT"/\1"/' gradle/libs.versions.toml
           grep '^pokemon-client = ' gradle/libs.versions.toml
 
       # -Puniversal ships the UI natives of every desktop platform in the one jar (see build.gradle.kts).
-      - name: Build the universal jar
-        run: ./gradlew packageUberJarForCurrentOS -Puniversal
+      - name: Test and build the universal JAR
+        run: ./gradlew test packageUberJarForCurrentOS -Puniversal
 
-      - name: Attach it to the release
+      - name: Attach the JAR and its checksum
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           jar=$(ls build/compose/jars/*.jar | head -n 1)
-          asset="ai-plays-pokemon-${TAG}-universal.jar"
+          asset="ai-plays-online-${TAG}-universal.jar"
           cp "$jar" "$asset"
-          gh release upload "$TAG" "$asset" --clobber
+          shasum -a 256 "$asset" > "${asset}.sha256"
+          gh release upload "$TAG" \
+            "$asset#Cross-platform JAR (requires Java 21)" \
+            "${asset}.sha256#SHA-256 for the cross-platform JAR" \
+            --clobber
+
+  macos:
+    name: macOS Apple Silicon DMG
+    # GitHub's macos-14 public runner is Apple Silicon (arm64). Keep the architecture check below as a guard.
+    runs-on: macos-14
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Checkout the release's tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Set up the JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Use the released pokemon-client
+        run: |
+          sed -i '' -E 's/^(pokemon-client = "[^"]+)-SNAPSHOT"/\1"/' gradle/libs.versions.toml
+          grep '^pokemon-client = ' gradle/libs.versions.toml
+
+      # packageDmg includes a Java runtime, so recipients do not need to install Java separately.
+      - name: Test and build the macOS app
+        run: ./gradlew test packageDmg
+
+      - name: Verify and attach the macOS DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(uname -m)" = "arm64"
+          app="build/compose/binaries/main/app/AI Plays Online.app"
+          plist="$app/Contents/Info.plist"
+          file "$app/Contents/MacOS/AI Plays Online" | grep -q 'arm64'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "me.nathanfallet.aiplaysonline"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "${TAG#v}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$plist")" = "public.app-category.games"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = "11.0"
+
+          dmg=$(ls build/compose/binaries/main/dmg/*.dmg | head -n 1)
+          asset="ai-plays-online-${TAG}-macos-arm64.dmg"
+          cp "$dmg" "$asset"
+          shasum -a 256 "$asset" > "${asset}.sha256"
+          gh release upload "$TAG" \
+            "$asset#macOS 11+ (Apple Silicon, Java bundled)" \
+            "${asset}.sha256#SHA-256 for the macOS DMG" \
+            --clobber

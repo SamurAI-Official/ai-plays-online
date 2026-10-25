@@ -36,13 +36,26 @@ Every variant is an option in the app (mode, knowledge level, timing, sequences,
 and each run records milestones (new places, story progress) with decisions, presses, time, tokens and cost in
 `~/.ai-plays-online/runs/`, so configurations can be compared.
 
-## Quick start
+## Download the macOS app
+
+The native app requires **macOS 11 or later on Apple Silicon** (M1 or later) and includes its own Java runtime:
+
+1. Download `ai-plays-online-<version>-macos-arm64.dmg` from
+   [GitHub Releases](https://github.com/SamurAI-Official/ai-plays-online/releases/latest).
+2. Open the DMG and drag **AI Plays Online** into **Applications**, then launch the app.
+3. Choose a Nintendo DS ROM that you dumped yourself. No game, BIOS or firmware is included.
+
+The macOS build is **not Developer ID signed or notarized**, so macOS may warn that the developer cannot be verified.
+If you trust the release, Control-click the app in Finder and choose **Open**. Intel Macs can use the cross-platform
+JAR below instead.
+
+## Quick start (JAR or source)
 
 You need **Java 21** (for example [Temurin 21](https://adoptium.net/temurin/releases/?version=21)) and a **Nintendo DS
 ROM that you dumped yourself** (no ROM is provided — see [Tested games](#tested-games) for the titles we verified).
 
-1. Build the app (or take the jar from a release of this repository). The same jar runs on macOS, Linux and Windows
-   (x86-64 and Apple Silicon).
+1. Build the app (or take `ai-plays-online-<version>-universal.jar` from a release). The same jar runs on macOS, Linux
+   and Windows (x86-64 and Apple Silicon).
 2. Run it. **The app opens on the game picker**: it lists the ROMs in your ROMs folder
    (`~/.ai-plays-online/roms` by default), each with what we know about it, and **Browse…** opens one from anywhere.
    Nothing is loaded until you pick — the app never starts a game by itself. To skip the picker, name a ROM on the
@@ -66,9 +79,10 @@ ROM that you dumped yourself** (no ROM is provided — see [Tested games](#teste
 ## Building and running
 
 ```bash
-./gradlew build          # compiles + 154 tests
-./gradlew startApp       # runs the app (the picker: no game is loaded until you choose one)
+./gradlew test         # unit tests
+./gradlew startApp      # runs the app (the picker: no game is loaded until you choose one)
 ./gradlew packageUberJarForCurrentOS -Puniversal   # the jar that runs on every platform
+./gradlew packageDmg    # on macOS: a self-contained .app and DMG
 ```
 
 A ROM on the command line (`./gradlew startApp -PappArgs="/path/to/game.nds"`) opens that game directly.
@@ -143,6 +157,16 @@ chapter aoe:cursor (Learn the controls) reached at frame 3480      # the reader'
 
 The format, the recipes, what it can and cannot infer, and the mistakes it learned from are in
 [`docs/readers.md`](docs/readers.md).
+
+**A ROM with no reader teaches the app one by itself.** You do not have to run anything: while a game with no reader is
+played, `emulator/ReaderCalibrator` watches the picture and the memory together, one 128 KiB part of main RAM at a time,
+and writes `readers/<id>.json` when it has a signal it can stand behind — one that separates at least three screens,
+survives being re-checked on every later look, and was seen again on a screen that came back. The panel shows it
+learning; the moment the reader is written the game is typed. On Mario Kart DS (nobody calibrated it, the route was
+blind button presses) it wrote a 4-value reader and the picker then offered it as
+`TYPED · reader: 4 values (learned while playing)`. The same run *rejected* the addresses that looked perfect at first —
+clocks that moved once per screen — because a screen came back with a different value. What it finds is a draft to
+review: the values are the game's own, the names are placeholders.
 
 **The reader also plays the game.** `ReaderPlayer` is the same observe → decide → act loop as the Pokémon player, with
 the reader's values as its state and the console's own actions (press, hold, tap, wait) — so a game nobody wrote code
