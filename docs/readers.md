@@ -87,6 +87,81 @@ chapter aoe:start (Start the campaign) reached at frame 1650       # screen land
 chapter aoe:cursor (Learn the controls) reached at frame 3480      # the reader's in-mission signal
 ```
 
+## The app learns one while you play
+
+Nobody has to run a calibration by hand for a ROM: **the app learns a reader while the game is played** and writes it
+itself. `emulator/ReaderCalibrator` is fed by the app every time it looks at the game (a few times a second) — the
+picture (`FrameHash` of the frame) and the memory — and it is the same learner `dev/ReaderLearnProbe` drives headlessly.
+
+How it decides, and why it is not guesswork:
+
+- **One part of memory at a time.** Main RAM is far too big to judge every address on every look, and the tens of
+  thousands of addresses that move while a game boots would swamp anything worth keeping. The learner examines 128 KiB,
+  with a baseline taken when it started that part, then moves on: a session covers all of a DS's 4 MiB in 32 parts. Each
+  part is judged on what changed *within* it, which is where a game keeps "which screen am I on". A part is only left
+  behind once the game has shown it at least two screens, or after 96 looks.
+- **Evidence, not guesswork.** An address is a signal only if it mostly agrees with the screen: one value per screen,
+  held on 90%+ of the looks at it. A frame counter or an animation step changes constantly, so it never agrees.
+- **Verification for the rest of the run.** A candidate is then read on **every** later look: if a screen that comes
+  back gives it a different value, it is refuted and never considered again. That is what tells a screen id from a
+  clock — a counter that happens to move once per screen looks perfect until a screen comes back.
+- **It refuses to write junk.** A reader is only written when a signal separates at least 3 screens, has survived 8+
+  looks of checking, and was seen again on a screen that came back. Until then the panel says what it is still missing.
+
+The proof, on two games nobody calibrated for the learner (both with a route of blind button presses):
+
+```
+# Mario Kart DS, 30,000 frames
+looks: 2000, screens: 12, addresses kept: 32
+ready: true, best signal separates 3 screens and agrees 100% of the time
+   0x02175580: 3 values over 4 screens, checked 1769 times since (1762 on a screen that came back)
+wrote /tmp/learn-demo/readers/mario-kart-ds.json
+```
+
+and the app then treats that game as typed — from `./gradlew probe`:
+
+```
+- Mario Kart DS [AMCE] · TYPED · walkthrough: 7 chapters · reader: 4 values, 0 signals (learned while playing)
+```
+
+What the same run *rejected* is the interesting part: the first candidates it found were addresses that took one value
+per screen and looked perfect (`0x0232e8b5: 9 values over 9 screens, agrees 1.00`) — they were clocks, moving once per
+screen, and the moment a screen came back with a different value they were thrown away. A reader that had been written
+from them would have been worse than useless: it would have told the AI it was on a screen it had left.
+
+### Limits, stated plainly
+
+- **It finds *a* consistent signal, not necessarily *the* one a human would pick.** On Age of Empires, a 24,000-frame
+  run completed all 1,600 looks; the learner settles on a per-screen table at `0x0237b290` (7 screens, 1,569
+  verification looks, 1,489 on revisited screens) rather than the `0x023867c6` a hand calibration chose. Both work as
+  "which screen is up"; the human one is better because a human also knows what the values mean.
+- **The names are placeholders.** `values` maps a value to the screen's picture, or to a chapter title when a
+  walkthrough landmark already knows that picture ("Boot to the front end" below is that). Rename them when you know.
+- **A game whose screens never repeat cannot be verified.** If every screen is visited once, a screen id and a clock are
+  indistinguishable, so nothing is written. Going back to a menu is what makes it learnable.
+- **It only learns for a game that has no reader.** A shipped or hand-written reader (and the user's own file) wins.
+- **Review it before trusting it.** `provenance: "learned while playing"` and the note on each value say how it was
+  found: what it saw, how often it agreed, and how many looks of checking it survived.
+
+### Driving it yourself
+
+```bash
+# Learn for a ROM headlessly and print what it found (add --write to save it):
+./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.ReaderLearnProbeKt \
+  -PdevArgs="/path/to/game.nds|30000|desmume"
+
+# Options: |frames|core, --write, --route=A@900-908;DOWN@1400-1408 (drive a different route),
+#          --chunk=<bytes> and --looks=<n> (how much of memory is examined at a time, and for how long)
+
+# A game that already has a reader is the learner's ground truth: the probe says whether it found those addresses again:
+#   -- the reader this game already has (a hand calibration, for comparison):
+#      screen at 0x023867c6: not found in this run
+```
+
+In the app it happens by itself: open a game with no reader, play it (or let the AI play), and watch the **Reader**
+section of the panel — it shows how many looks, how many screens, which part of memory is being examined, and how many
+signals it has. When it is confident it writes `<data>/readers/<id>.json` and the panel starts showing the values live.
+
 ## Playing through a reader
 
 `ReaderPlayer` (`agent/ReaderPlayer.kt`) is the second half of a typed agent: the same observe → decide → act loop as

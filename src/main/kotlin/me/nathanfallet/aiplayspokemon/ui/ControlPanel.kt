@@ -126,15 +126,16 @@ fun ControlPanel(
         ExperimentSettings(controller, backend)
 
         val currentPlayer = player
+        val reader by controller.reader.collectAsState()
         when {
-            controller.game == null && controller.reader != null && currentPlayer == null -> Text(
-                "This game has a calibrated reader (see Reader above): the AI plays it through it, so an API key or " +
-                    "model is all that is missing.",
+            controller.game == null && reader == null -> Text(
+                "This game has no reader yet, so the app is learning one while it is played (see Reader below): play " +
+                    "on, or let the AI play, and it writes readers/<id>.json itself once the game has shown it a few " +
+                    "screens. Until then you can play it yourself.",
             )
-            controller.game == null && controller.profile.agent == AgentKind.SCREEN -> Text(
-                "No reader for this game yet: the AI would only have the screen, which is not wired up yet, so you " +
-                    "can play it yourself. Its profile (objective and conventions) is in the game picker, and a " +
-                    "reader can be calibrated with dev/RamProbeTool (docs/readers.md).",
+            controller.game == null && currentPlayer == null -> Text(
+                "This game has a reader (see Reader above): the AI plays it through it, so a model (or its API key) " +
+                    "is what is missing.",
             )
             backend == DecisionBackend.MCP -> McpSection(controller)
             currentPlayer == null -> ApiKeyForm(controller.missingApiKey ?: "the model", controller::setApiKey)
@@ -793,24 +794,45 @@ private fun agentLabel(agent: AgentKind): String = when (agent) {
  */
 @Composable
 private fun ReaderSection(controller: AppController) {
-    val reader = controller.reader ?: return
+    val reader by controller.reader.collectAsState()
     val values by controller.readerValues.collectAsState()
+    val learning by controller.learning.collectAsState()
+    learning?.let { progress ->
+        // No reader yet: the app is learning one while the game is played (see emulator/ReaderCalibrator.kt).
+        HorizontalDivider()
+        Text("Reader", fontWeight = FontWeight.Bold)
+        Text(
+            if (progress.ready) "Learning this game: writing a reader…"
+            else "Learning this game while you play: ${progress.samples} looks, ${progress.screens} screens, part " +
+                "${progress.chunk + 1}/${progress.chunks} of memory, ${progress.candidates} signals so far, best one " +
+                "separates ${progress.bestValues} screens and agrees " +
+                "${"%.0f".format(progress.bestConsistency * 100)}% of the time.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "Play on (or let the AI play): the app writes readers/<id>.json itself once the game has shown it a few " +
+                "screens. See docs/readers.md.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    val current = reader ?: return
     HorizontalDivider()
     Text("Reader", fontWeight = FontWeight.Bold)
     Text(
-        "Calibrated for this game (${reader.provenance}): ${reader.observations.size} values, " +
-            "${reader.progress.size} progress signals.",
+        "This game's reader (${current.provenance}): ${current.observations.size} values, " +
+            "${current.progress.size} progress signals.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    for (observation in reader.observations) {
+    for (observation in current.observations) {
         Text(
             "${observation.name}: ${values[observation.name] ?: "—"}",
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
         )
     }
-    reader.notes.takeIf { it.isNotBlank() }?.let { notes ->
+    current.notes.takeIf { it.isNotBlank() }?.let { notes ->
         Text(notes, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

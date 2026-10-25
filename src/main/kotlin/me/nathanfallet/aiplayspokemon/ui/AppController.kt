@@ -28,6 +28,8 @@ import me.nathanfallet.aiplayspokemon.agent.PokemonPlayer
 import me.nathanfallet.aiplayspokemon.config.AppConfig
 import dev.kotlinds.pokemonclient.console.Button
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
+import me.nathanfallet.aiplayspokemon.emulator.FrameHash
+import me.nathanfallet.aiplayspokemon.emulator.ReaderCalibrator
 import dev.kotlinds.pokemonclient.PokemonGame
 import dev.kotlinds.pokemonclient.runtime.Recorder
 import dev.kotlinds.pokemonclient.view.StateView
@@ -126,17 +128,34 @@ class AppController(
     val narrationVoice: StateFlow<String> = _narrationVoice.asStateFlow()
 
     /**
-     * What the app can read from this game: its calibrated reader (`readers/<id>.json`, see `docs/readers.md`), or
-     * null when the game has none. A game with a reader is a typed game ([profile] was switched to
-     * [AgentKind.TYPED] when it was opened), and its values are shown live in the panel and used to verify a
-     * chapter whose milestone is `kind: memory`.
+     * What the app can read from this game: its reader (`readers/<id>.json`, see `docs/readers.md`), or null when the
+     * game has none. A game with a reader is a typed game ([profile] was switched to [AgentKind.TYPED] when it was
+     * opened), and its values are shown live in the panel and used to verify a chapter whose milestone is `kind:
+     * memory`. A reader the app learns itself ([calibrator]) appears here as soon as it is written.
      */
-    val reader: ReaderSpec? = ReaderCatalog.of(profile, config.dataDirectory)
+    private val _reader = MutableStateFlow(ReaderCatalog.of(profile, config.dataDirectory))
+
+    /** The game's reader, live: the panel, the prompt and the memory milestones read it from here. */
+    val reader: StateFlow<ReaderSpec?> = _reader.asStateFlow()
 
     private val _readerValues = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /** The reader's observations as they read right now (name → value), for the panel. */
     val readerValues: StateFlow<Map<String, String>> = _readerValues.asStateFlow()
+
+    /**
+     * The learner: a game with no reader teaches the app one while it is played (see [ReaderCalibrator]). It is only
+     * used when the game has no reader at all — a game that ships one, or whose reader the user wrote, is left alone.
+     */
+    private val calibrator = ReaderCalibrator().takeIf { _reader.value == null }
+
+    private val _learning = MutableStateFlow<ReaderCalibrator.Progress?>(null)
+
+    /** How far the app has got learning this game's reader, or null when it is not learning one. */
+    val learning: StateFlow<ReaderCalibrator.Progress?> = _learning.asStateFlow()
+
+    /** True once the app wrote a reader it learned itself. */
+    private var wroteLearnedReader = false
 
     /**
      * The narration control: the voice saying the decisions, and the lines it really said. It owns the
@@ -382,7 +401,7 @@ class AppController(
         _player.value?.pause()
         val game = game
         val model = createModel(_backend.value, emulator)
-        val reader = reader
+        val reader = reader.value
         _player.value = when {
             game != null && model != null -> {
                 // In hybrid mode, the LLM settings define the planner (it may be the same as the decider).
@@ -397,8 +416,8 @@ class AppController(
                     narrator = { narrator() },
                 )
             }
-            // A game whose reader was calibrated (readers/<id>.json): the same loop, its state is what the reader
-            // reads and its actions are the console's own (see docs/readers.md).
+            // A game with a reader (shipped, calibrated by hand, or learned by the app while playing): the same loop,
+            // its state is what the reader reads and its actions are the console's own (see docs/readers.md).
             reader != null && model != null -> ReaderPlayer(
                 emulator = emulator,
                 reader = reader,
@@ -459,12 +478,48 @@ class AppController(
 
     /** Reads the game's reader, if it has one: what the panel shows live, and what [watchScreen] checks. */
     private suspend fun refreshReader() {
-        val reader = reader ?: return
+        val reader = reader.value
+        if (reader == null) {
+            learnReader()
+            return
+        }
         if (reader.observations.isEmpty()) return
         _readerValues.value = runCatching {
             emulator.observe { memory -> ReaderCatalog.observe(reader, memory) }
         }.getOrElse { _readerValues.value }
     }
+
+    /**
+     * A game with no reader teaches the app one while it is played: every look at the game hands the learner the
+     * picture and the memory ([ReaderCalibrator]), and once there is enough evidence the app writes the reader to
+     * `<data>/readers/<id>.json` — the same file a calibration by hand would produce, so the game becomes typed the
+     * moment it is written (and the panel starts showing its values).
+     */
+    private suspend fun learnReader() {
+        val calibrator = calibrator ?: return
+        if (wroteLearnedReader) return
+        val frame = emulator.frames.value ?: return
+        val ram = runCatching { emulator.readMainRam() }.getOrNull() ?: return
+        val progress = calibrator.observe(FrameHash.dHash(frame), ram)
+        _learning.value = progress
+        if (!progress.ready) return
+        val spec = calibrator.draft(profile.id, screenNames()) ?: return
+        val file = runCatching { ReaderCatalog.write(spec, config.dataDirectory) }.getOrNull() ?: return
+        wroteLearnedReader = true
+        _reader.value = spec
+        _learning.value = null
+        emulator.systemLog.add("learned a reader for ${profile.title}: ${spec.observations.size} values → $file")
+        println("ai-plays-online: learned a reader for ${profile.title} (${spec.observations.size} values) → $file")
+    }
+
+    /** The screen names a walkthrough already knows, so a learned reader names them instead of "screen 3f". */
+    private fun screenNames(): Map<Long, String> = walkthrough.walkthrough.value?.chapters.orEmpty()
+        .mapNotNull { chapter ->
+            val milestone = chapter.milestone ?: return@mapNotNull null
+            val hash = milestone.hashes.firstNotNullOfOrNull { FrameHash.parse(it) } ?: return@mapNotNull null
+            hash to chapter.title
+        }
+        .toMap()
 
     /**
      * Looks at the frame the console just produced for the current chapter's landmark (a few times a second, see
@@ -478,7 +533,7 @@ class AppController(
         val chapter = walkthrough.chapter ?: return
         val milestone = chapter.milestone ?: return
         if (milestone.kind == MilestoneKind.MEMORY) {
-            val signal = reader?.progress?.firstOrNull { it.name == milestone.signal } ?: return
+            val signal = reader.value?.progress?.firstOrNull { it.name == milestone.signal } ?: return
             if (emulator.observe { memory -> signal.reached(memory) }) {
                 walkthrough.advance("the game's own state (${signal.name})")
             }
