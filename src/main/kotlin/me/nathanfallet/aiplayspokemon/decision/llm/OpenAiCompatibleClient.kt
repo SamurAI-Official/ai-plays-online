@@ -41,24 +41,31 @@ class OpenAiCompatibleClient private constructor(
         )
     }
 
-    /** The OpenAI JSON of one message: a plain string, or text + image parts when a screenshot is attached. */
+    /** The OpenAI JSON of one message: a plain string, or text + labelled pictures when images are attached. */
     private fun ChatMessage.toJson(): JsonObject = buildJsonObject {
         put("role", JsonPrimitive(role))
-        if (imagePngBase64 == null) {
+        if (images.isEmpty()) {
             put("content", JsonPrimitive(text))
         } else {
-            put("content", JsonArray(listOf(
-                buildJsonObject {
+            put("content", JsonArray(buildList {
+                add(buildJsonObject {
                     put("type", JsonPrimitive("text"))
                     put("text", JsonPrimitive(text))
-                },
-                buildJsonObject {
-                    put("type", JsonPrimitive("image_url"))
-                    put("image_url", buildJsonObject {
-                        put("url", JsonPrimitive("data:image/png;base64,$imagePngBase64"))
+                })
+                // Each picture is introduced by its own line, so the model knows which one it is looking at.
+                for ((label, base64) in images) {
+                    add(buildJsonObject {
+                        put("type", JsonPrimitive("text"))
+                        put("text", JsonPrimitive("Image: $label"))
                     })
-                },
-            )))
+                    add(buildJsonObject {
+                        put("type", JsonPrimitive("image_url"))
+                        put("image_url", buildJsonObject {
+                            put("url", JsonPrimitive("data:image/png;base64,$base64"))
+                        })
+                    })
+                }
+            }))
         }
     }
 
@@ -70,14 +77,14 @@ class OpenAiCompatibleClient private constructor(
     )
 
     /**
-     * One message of the conversation. [imagePngBase64] is the screenshot a vision model is shown: the OpenAI format
-     * carries it as a second part of the message's content (a plain string when there is none), which is what makes a
-     * multimodal endpoint able to *see* the screen at all.
+     * One message of the conversation. [images] are the pictures a vision model is shown, each with the label the
+     * text refers to ("top screen", "bottom screen"): the OpenAI format carries them as extra parts of the message's
+     * content (a plain string when there are none), which is what makes a multimodal endpoint able to *see* the game.
      */
     data class ChatMessage(
         val role: String,
         val text: String,
-        val imagePngBase64: String? = null,
+        val images: List<Pair<String, String>> = emptyList(), // (label, base64 PNG)
     )
 
     /** Sends a chat completion request and returns the assistant's text and token usage. */

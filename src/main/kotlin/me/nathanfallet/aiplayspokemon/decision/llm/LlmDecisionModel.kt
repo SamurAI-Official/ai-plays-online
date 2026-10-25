@@ -10,6 +10,7 @@ import dev.kotlinds.pokemonclient.console.Frame
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
+import me.nathanfallet.aiplayspokemon.emulator.Screens.pngBase64
 import me.nathanfallet.aiplayspokemon.decision.ChoiceResult
 import me.nathanfallet.aiplayspokemon.decision.DecisionException
 import me.nathanfallet.aiplayspokemon.decision.DecisionModel
@@ -35,8 +36,11 @@ class LlmDecisionModel(
     apiKey: String?,
     private val thinking: Boolean = false,
     private val baseUrl: String? = null,
-    /** The latest emulator frame as a screenshot, injected so the model sees the current screen. */
-    private val latestFrame: () -> Frame? = { null },
+    /**
+     * The pictures attached to every request, each with its label (a DS game is played on two screens and both are
+     * sent, cropped, so each gets the full resolution the vision encoder offers).
+     */
+    private val screens: () -> List<Pair<String, Frame>> = { emptyList() },
 ) : DecisionModel {
 
     override val name = "${provider.label} · $modelId${if (thinking) " (thinking)" else ""}"
@@ -54,20 +58,21 @@ class LlmDecisionModel(
         var inputTokens = 0
         var outputTokens = 0
         var previous: Pair<String, String>? = null // (invalid answer, error) to correct on retry
-        // The screenshot is read once per choose() call: the model sees the screen it's deciding on.
-        val screenshotBase64 = latestFrame.invoke()?.let { encodeFrameToPngBase64(it) }
+        // The pictures are read once per choose() call: the model sees the screens it is deciding on.
+        val pictures = screens.invoke().map { (label, frame) -> label to frame.pngBase64() }
         repeat(MAX_ATTEMPTS) {
             val decisionPrompt = prompt("decision", params = provider.params(thinking)) {
                 system(LlmAnswerFormat.instructions(request))
                 user {
                     text(state)
-                    screenshotBase64?.let {
+                    pictures.forEach { (label, base64) ->
+                        text("Image: $label")
                         image(
                             AttachmentSource.Image(
-                                AttachmentContent.Binary.Base64(it),
+                                AttachmentContent.Binary.Base64(base64),
                                 "png",
                                 "image/png",
-                                "screenshot.png"
+                                "$label.png"
                             )
                         )
                     }
@@ -84,7 +89,7 @@ class LlmDecisionModel(
                     // sees the screen if the image is a part of the message (see OpenAiCompatibleClient.ChatMessage).
                     val messages = buildList {
                         add(OpenAiCompatibleClient.ChatMessage("system", LlmAnswerFormat.instructions(request)))
-                        add(OpenAiCompatibleClient.ChatMessage("user", state, imagePngBase64 = screenshotBase64))
+                        add(OpenAiCompatibleClient.ChatMessage("user", state, images = pictures))
                         previous?.let { (answer, error) ->
                             add(OpenAiCompatibleClient.ChatMessage("assistant", answer))
                             add(
@@ -123,14 +128,6 @@ class LlmDecisionModel(
         throw DecisionException("$name gave no valid answer: ${previous?.second}", retryable = true)
     }
 
-    /** Encodes a [Frame]'s ARGB pixels as a base64 PNG data URL. */
-    private fun encodeFrameToPngBase64(frame: Frame): String {
-        val image = BufferedImage(frame.width, frame.height, BufferedImage.TYPE_INT_ARGB)
-        image.setRGB(0, 0, frame.width, frame.height, frame.pixels, 0, frame.width)
-        val baos = ByteArrayOutputStream()
-        ImageIO.write(image, "PNG", baos)
-        return Base64.getEncoder().encodeToString(baos.toByteArray())
-    }
 
     internal companion object {
         const val MAX_ATTEMPTS = 2

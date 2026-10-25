@@ -18,6 +18,7 @@ import me.nathanfallet.aiplayspokemon.decision.DecisionException
 import me.nathanfallet.aiplayspokemon.decision.DecisionModel
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import me.nathanfallet.aiplayspokemon.emulator.FrameHash
+import me.nathanfallet.aiplayspokemon.emulator.Screens
 import me.nathanfallet.aiplayspokemon.games.GameProfile
 import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
 import me.nathanfallet.aiplayspokemon.games.ReaderSpec
@@ -52,8 +53,8 @@ class ReaderPlayer(
     private val history = ArrayDeque<String>()
     private val screenState = ScreenState()
 
-    /** The hash of the last frame the previous action ended on: what this action's change is measured against. */
-    private var lastSeenHash: Long? = null
+    /** The hash of each screen as the previous action left it: what this action's change is measured against. */
+    private val lastSeenHashes = mutableMapOf<Screens.Screen, Long>()
 
     private val _state = MutableStateFlow(PlayerState())
     override val state: StateFlow<PlayerState> = _state.asStateFlow()
@@ -80,21 +81,26 @@ class ReaderPlayer(
         var stagnation = 0
         var lastAction: String? = null
         var lastChange: String? = null
-        var changedByAction = false
-        var stableFrames = 0
+        var reports: Map<Screens.Screen, ActionReport> = emptyMap()
 
         while (scope.isActive && state.value.playing) {
             val before = observe()
             val chapter = walkthrough.chapter
-            // What the picture shows: how it moved while the last action ran, whether it matches a walkthrough
-            // landmark, and the model's own reading of the screenshot — asked only when the picture has settled, since
-            // that is when a reading is both useful and reliable (and it is one more model call).
+            // What each screen shows: how it moved while the last action ran, whether it matches a walkthrough
+            // landmark, and the model's own reading of each screen — asked per screen, only once that screen settles
+            // (that is when a reading is useful and reliable, and it is one more model call per screen).
             val frame = emulator.frames.value
-            val settled = stableFrames >= SCREEN_READ_STABLE_FRAMES
-            if (settings().readScreen && model.generative && settled) {
-                screenState.read(model, frame) { failure -> emulator.systemLog.add("screen read failed: $failure") }
+            if (settings().readScreen && model.generative) {
+                for (screen in Screens.Screen.entries) {
+                    val settled = (reports[screen]?.stableFrames ?: 0) >= SCREEN_READ_STABLE_FRAMES
+                    if (settled) {
+                        screenState.read(model, frame, screen) { failure ->
+                            emulator.systemLog.add("screen read failed: $failure")
+                        }
+                    }
+                }
             }
-            val view = screenState.view(frame, chapter, changedByAction, stableFrames)
+            val view = screenState.view(frame, chapter, reports)
             _state.update { it.copy(screenRead = view.summary()) }
             val request = ChoiceRequest(
                 state = ReaderPrompt.state(
@@ -133,18 +139,15 @@ class ReaderPlayer(
 
             val performed = mutableListOf<String>()
             var problem: String? = null
-            var report = ActionReport()
             for (option in sequence) {
-                val (actionReport, outcome) = perform(option)
-                report = actionReport
+                val (actionReports, outcome) = perform(option)
+                reports = actionReports
                 performed += option
                 if (outcome != null) {
                     problem = outcome
                     break
                 }
             }
-            changedByAction = report.changed
-            stableFrames = report.stableFrames
 
             val after = observe()
             val change = ReaderActions.describeChange(before, after)
@@ -192,34 +195,43 @@ class ReaderPlayer(
         runCatching { emulator.observe { memory -> ReaderCatalog.observe(reader, memory) } }.getOrDefault(emptyMap())
 
     /**
-     * Carries [option] out on the console, watching the picture frame by frame while it runs: that is how the app
-     * knows whether the game *answered* the action, and whether the picture has settled since (a game waiting for
-     * input). Returns the report, or the reason it failed.
+     * Carries [option] out on the console, watching **each screen** frame by frame while it runs: that is how the app
+     * knows which screen the game answered on, and which one has settled (the one waiting for input). Returns the
+     * report per screen, or the reason it failed.
      *
-     * The picture is compared within [STABLE_BITS], the same tolerance the landmark matcher uses, because menus blink
-     * and scroll: comparing frames exactly would call every animated screen "moving" and nothing would ever be read.
+     * A screen is compared within [STABLE_BITS], the same tolerance the landmark matcher uses, because menus blink and
+     * scroll: comparing frames exactly would call every animated screen "moving" and nothing would ever be read.
      */
-    private suspend fun perform(option: String): Pair<ActionReport, String?> {
-        val plan = ReaderActions.plan(option) ?: return ActionReport() to "unknown action '$option'"
-        val startHash = lastSeenHash
-        var previous: Long? = null
-        var stableRun = 0
-        var changed = false
+    private suspend fun perform(option: String): Pair<Map<Screens.Screen, ActionReport>, String?> {
+        val plan = ReaderActions.plan(option) ?: return emptyMap<Screens.Screen, ActionReport>() to "unknown action '$option'"
+        val startHashes = lastSeenHashes.toMap()
+        val previous = mutableMapOf<Screens.Screen, Long>()
+        val stableRun = mutableMapOf<Screens.Screen, Int>()
+        val changed = mutableMapOf<Screens.Screen, Boolean>()
         val failure = try {
             emulator.lease(option, inputProbe) {
-                // One frame at a time: the picture is looked at after each of them, so "did anything happen?" and
-                // "how long has it been still?" are measured, not guessed.
+                // One frame at a time: both screens are looked at after each of them, so "which one answered?" and
+                // "how long has each been still?" are measured, not guessed.
                 repeat(plan.heldFrames) {
                     step(1, plan.input())
-                    observeFrame { hash -> previous = hash }
+                    observeFrame { frame -> for (screen in Screens.Screen.entries) previous[screen] = Screens.hashOf(frame, screen) }
                 }
                 repeat(plan.settleFrames) {
                     step(1)
-                    observeFrame { hash ->
-                        val before = previous
-                        if (before != null && FrameHash.distance(hash, before) <= STABLE_BITS) stableRun++ else stableRun = 0
-                        if (startHash != null && FrameHash.distance(hash, startHash) > STABLE_BITS) changed = true
-                        previous = hash
+                    observeFrame { frame ->
+                        for (screen in Screens.Screen.entries) {
+                            val hash = Screens.hashOf(frame, screen)
+                            val before = previous[screen]
+                            if (before != null && FrameHash.distance(hash, before) <= STABLE_BITS) {
+                                stableRun[screen] = (stableRun[screen] ?: 0) + 1
+                            } else {
+                                stableRun[screen] = 0
+                            }
+                            startHashes[screen]?.let { start ->
+                                if (FrameHash.distance(hash, start) > STABLE_BITS) changed[screen] = true
+                            }
+                            previous[screen] = hash
+                        }
                     }
                 }
             }
@@ -229,17 +241,17 @@ class ReaderPlayer(
             pause()
             "interrupted by the human"
         }
-        previous?.let { lastSeenHash = it }
-        return ActionReport(changed = changed, stableFrames = stableRun) to failure
+        previous.forEach { (screen, hash) -> lastSeenHashes[screen] = hash }
+        val reports = Screens.Screen.entries.associateWith { screen ->
+            ActionReport(changed = changed[screen] == true, stableFrames = stableRun[screen] ?: 0)
+        }
+        return reports to failure
     }
 
     /** Feeds the frame the console just produced to [block]. */
-    private inline fun observeFrame(block: (Long) -> Unit) {
-        emulator.frames.value?.let { frame -> block(FrameHash.dHash(frame)) }
+    private inline fun observeFrame(block: (dev.kotlinds.pokemonclient.console.Frame) -> Unit) {
+        emulator.frames.value?.let(block)
     }
-
-    /** What one action did to the picture. */
-    private data class ActionReport(val changed: Boolean = false, val stableFrames: Int = 0)
 
     override fun toggle() = if (state.value.playing) pause() else play()
 

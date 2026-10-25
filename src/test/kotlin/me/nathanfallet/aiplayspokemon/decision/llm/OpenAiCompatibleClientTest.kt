@@ -53,13 +53,15 @@ class OpenAiCompatibleClientTest {
                     "some-model",
                     listOf(
                         OpenAiCompatibleClient.ChatMessage("system", "Choose."),
-                        OpenAiCompatibleClient.ChatMessage("user", "State: {}", imagePngBase64 = "AAAA"),
+                        OpenAiCompatibleClient.ChatMessage("user", "State: {}", images = listOf("screenshot" to "AAAA")),
                     ),
                 )
             }
-            // The content of a message with an image is the OpenAI array form: text part + image part. Sending it as a
-            // plain string (what this client used to do) meant a multimodal endpoint never saw the screen at all.
+            // The content of a message with images is the OpenAI array form: text part, then each picture labelled and
+            // attached. Sending it as a plain string (what this client used to do) meant a multimodal endpoint never
+            // saw the screen at all.
             assertTrue(""""content":[{"type":"text","text":"State: {}"}""" in stub.lastBody, stub.lastBody)
+            assertTrue(""""text":"Image: screenshot"""" in stub.lastBody, stub.lastBody)
             assertTrue(""""type":"image_url"""" in stub.lastBody, stub.lastBody)
             assertTrue(""""url":"data:image/png;base64,AAAA"""" in stub.lastBody, stub.lastBody)
             // A message without one stays a plain string, which every endpoint understands.

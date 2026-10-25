@@ -174,13 +174,14 @@ the reader's values:
 It explored when A did nothing (it was told it was stuck), then got the menu to move. That is the whole point: a game
 nobody wrote code for, played by a model that can only see the numbers a calibration found.
 
-**And it is told what the picture is doing**, because a reader alone cannot say "a dialogue box is open and it wants
-A". Every request carries a `screen` block: whether the picture changed *while the action ran* (`stable 30 frames ·
-nothing moved` versus `answered you`), how long it has been still (a still picture is a game waiting for input), which
-walkthrough landmark it matches, and — when the model has vision — its own one-line reading of the screenshot
-(`dialogue`, `menu`, `field`, `loading`, `intro`, `unknown`). The panel shows the same line under **Screen**, so it is
-visible at a glance whether the chosen model reads the screen at all; a model without vision says `unknown` and the
-request tells it (and the user) why. Details in [`docs/readers.md`](docs/readers.md).
+**And it is told what the picture is doing — both screens of it**, because a reader alone cannot say "a dialogue box is
+open and it wants A". A DS game uses both screens, so the request carries a `screen` block with a `top` and a `bottom`:
+what each one shows (the model's own reading of that screen, when it has vision), how long each has been still, and
+which one changed while the action ran (a still screen is a game waiting for input; the screen that answered says so).
+Both screens are sent to the model as **two labelled pictures**, cropped, instead of one combined frame — one image
+would give each screen half the detail, which is what small dialogue text suffers from. The panel shows the same line
+under **Screen**, so it is visible at a glance whether the chosen model reads the screens at all. Details, and the
+`dev/VisionCheck` tool that proves both screens are seen and told apart, in [`docs/readers.md`](docs/readers.md).
 
 ## Running from source
 

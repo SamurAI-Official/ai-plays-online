@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import me.nathanfallet.aiplayspokemon.games.GameProfile
 import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
 
@@ -44,16 +45,21 @@ object ReaderPrompt {
         }
         screen?.let { view ->
             putJsonObject("screen") {
-                put("looks_like", view.looksLike ?: "not read")
-                put("stable_frames", view.stableFrames)
-                put("changed_by_your_action", view.changedByAction)
+                putJsonObject("top") { putScreenView(view.top) }
+                putJsonObject("bottom") { putScreenView(view.bottom) }
                 view.landmark?.let { put("landmark", it) }
                 view.note?.let { put("what_that_means", it) }
+                put(
+                    "note",
+                    "A Nintendo DS has two screens and games use both: the top one often shows the world or a " +
+                        "dialogue box, the bottom one the menus — and the bottom one is the touch screen, so " +
+                        "`touch_x_y` taps there.",
+                )
                 if (view.blind) {
                     put(
                         "warning",
-                        "the model answered that it cannot see the screenshot: only `reader` is available, so " +
-                            "dialogue boxes and menus cannot be read. Pick a model with vision to see the screen.",
+                        "the model answered that it cannot see the screenshots: only `reader` is available, so " +
+                            "dialogue boxes and menus cannot be read. Pick a model with vision to see the screens.",
                     )
                 }
             }
@@ -107,4 +113,12 @@ object ReaderPrompt {
     /** One line per past decision, oldest first, as [state]'s `history`. */
     fun historyLine(number: Int, action: String, change: String, summary: String): String =
         "#$number $action → $change (was: $summary)"
+
+    /** One screen of the `screen` block: what it shows, and what the last action did to it. */
+    private fun JsonObjectBuilder.putScreenView(view: ScreenState.ScreenView) {
+        put("looks_like", view.looksLike ?: "not read")
+        put("stable_frames", view.stableFrames)
+        put("changed_by_your_action", view.changedByAction)
+        view.landmark?.let { put("landmark", it) }
+    }
 }

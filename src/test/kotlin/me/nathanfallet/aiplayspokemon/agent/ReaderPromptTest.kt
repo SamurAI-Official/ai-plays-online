@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
+import me.nathanfallet.aiplayspokemon.emulator.Screens
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -27,10 +28,19 @@ class ReaderPromptTest {
             chapter = chapter,
             values = mapOf("screen" to "84 (in mission)", "menu" to "0"),
             screen = ScreenState.View(
-                stableFrames = 12,
-                changedByAction = true,
-                looksLike = "dialogue",
-                landmark = "Start the campaign",
+                top = ScreenState.ScreenView(
+                    screen = Screens.Screen.TOP,
+                    looksLike = "dialogue",
+                    stableFrames = 12,
+                    changedByAction = true,
+                    landmark = "Start the campaign",
+                ),
+                bottom = ScreenState.ScreenView(
+                    screen = Screens.Screen.BOTTOM,
+                    looksLike = "menu",
+                    stableFrames = 90,
+                    changedByAction = false,
+                ),
             ),
             lastAction = "press_a",
             lastChange = "screen: 83 → 84",
@@ -40,9 +50,13 @@ class ReaderPromptTest {
         assertEquals(profile.title, state["game"]!!.jsonPrimitive.content)
         assertEquals("Beat mission 1", state["objective"]!!.jsonPrimitive.content)
         assertEquals("84 (in mission)", state["reader"]!!.jsonObject["screen"]!!.jsonPrimitive.content)
-        assertEquals("dialogue", state["screen"]!!.jsonObject["looks_like"]!!.jsonPrimitive.content)
-        assertEquals("Start the campaign", state["screen"]!!.jsonObject["landmark"]!!.jsonPrimitive.content)
-        assertTrue(state["screen"]!!.jsonObject["what_that_means"]!!.jsonPrimitive.content.contains("Start the campaign"))
+        val screen = state["screen"]!!.jsonObject
+        assertEquals("dialogue", screen["top"]!!.jsonObject["looks_like"]!!.jsonPrimitive.content)
+        assertEquals("Start the campaign", screen["top"]!!.jsonObject["landmark"]!!.jsonPrimitive.content)
+        assertEquals("menu", screen["bottom"]!!.jsonObject["looks_like"]!!.jsonPrimitive.content)
+        assertEquals("90", screen["bottom"]!!.jsonObject["stable_frames"]!!.jsonPrimitive.content)
+        assertTrue(screen["note"]!!.jsonPrimitive.content.contains("bottom one is the touch screen"))
+        assertTrue(screen["what_that_means"]!!.jsonPrimitive.content.contains("top screen changed"))
         assertEquals("Learn the controls", state["walkthrough"]!!.jsonObject["chapter"]!!.jsonPrimitive.content)
         assertEquals("The D-pad pans the map.", state["walkthrough"]!!.jsonObject["hints"]!!.jsonArray.single().jsonPrimitive.content)
         assertEquals("press_a", state["last_action"]!!.jsonObject["did"]!!.jsonPrimitive.content)
@@ -58,15 +72,28 @@ class ReaderPromptTest {
             objective = "objective",
             chapter = null,
             values = mapOf("screen" to "19 (main menu)"),
-            screen = ScreenState.View(stableFrames = 3, changedByAction = false, looksLike = "unknown", landmark = null),
+            screen = ScreenState.View(
+                top = ScreenState.ScreenView(
+                    screen = Screens.Screen.TOP,
+                    looksLike = "unknown",
+                    stableFrames = 3,
+                    changedByAction = false,
+                ),
+                bottom = ScreenState.ScreenView(
+                    screen = Screens.Screen.BOTTOM,
+                    looksLike = "unknown",
+                    stableFrames = 3,
+                    changedByAction = false,
+                ),
+            ),
             lastAction = null,
             lastChange = null,
             history = emptyList(),
             stagnation = 0,
         )
         val screen = state["screen"]!!.jsonObject
-        assertEquals("unknown", screen["looks_like"]!!.jsonPrimitive.content)
-        assertTrue(screen["warning"]!!.jsonPrimitive.content.contains("cannot see the screenshot"))
+        assertEquals("unknown", screen["top"]!!.jsonObject["looks_like"]!!.jsonPrimitive.content)
+        assertTrue(screen["warning"]!!.jsonPrimitive.content.contains("cannot see the screenshots"))
     }
 
     @Test

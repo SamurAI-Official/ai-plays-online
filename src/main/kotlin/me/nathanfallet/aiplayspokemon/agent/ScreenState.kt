@@ -6,6 +6,7 @@ import kotlinx.serialization.json.put
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
 import me.nathanfallet.aiplayspokemon.decision.DecisionModel
 import me.nathanfallet.aiplayspokemon.emulator.FrameHash
+import me.nathanfallet.aiplayspokemon.emulator.Screens
 import me.nathanfallet.aiplayspokemon.games.MilestoneKind
 import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
 
@@ -14,100 +15,158 @@ import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
  *
  * A reader reads numbers out of memory: it can say "screen 84 (in mission)" but not "a dialogue box is open and it
  * wants A". That gap is what makes an agent think it is stuck on a boot screen while the game is actually showing a
- * conversation. This closes it in two ways:
+ * conversation. This closes it in two ways, **per screen**, because a DS game uses both (a map above a touch menu, an
+ * illustration above a dialogue box):
  *
- * - **offline**: the frame is hashed ([FrameHash]), so the app knows whether the picture changed since the last
- *   decision and how long it has been stable. A screen that has not changed for a second is a game *waiting for
- *   input*; one that changes every frame is loading or animating. It also knows whether the picture matches a
- *   walkthrough chapter's landmark, which names it outright.
- * - **with a model that can see**: the screenshot the app already attaches to every request is turned into one line,
- *   by asking the model which of a few kinds of screen it is looking at ([read]). The question is a normal
- *   [ChoiceRequest] with constrained options, so no new client code is needed, and `unknown` is one of them: a model
- *   that cannot see images says so instead of inventing a screen.
+ * - **offline**: each screen is hashed ([FrameHash]), so the app knows whether *that* screen changed while the action
+ *   ran and how long it has been stable — an animated HUD on one screen no longer hides the other being still. A
+ *   screen that has not changed for a second is a game *waiting for input*. Each screen is also matched against the
+ *   walkthrough chapter's landmark (which names a region, or the whole frame).
+ * - **with a model that can see**: the two screens are attached to every request as two pictures, and the model is
+ *   asked what each one shows ([read]), one line per screen, cached per screen and picture. `unknown` is one of the
+ *   options, so a model without vision says so instead of inventing a screen.
  */
 class ScreenState {
 
-    /** One decision's worth of screen knowledge. */
-    data class View(
-        /** How many frames the picture has looked the same, measured while the last action ran (0: it moved). */
-        val stableFrames: Int,
-        /** Whether the picture changed at all while the last action ran: did the game answer the press? */
-        val changedByAction: Boolean,
-        /** What the model said the screen shows, or null when it was never asked / could not see. */
+    /** What each screen is doing. */
+    data class ScreenView(
+        val screen: Screens.Screen,
+        /** What the model said this screen shows, or null when it was never asked / could not see. */
         val looksLike: String?,
-        /** The walkthrough chapter whose landmark this picture matches, when it matches one. */
-        val landmark: String?,
+        /** How many frames this screen has looked the same, measured while the last action ran. */
+        val stableFrames: Int,
+        /** Whether this screen changed at all while the last action ran: did the game answer the press there? */
+        val changedByAction: Boolean,
+        /** The walkthrough chapter whose landmark this screen matches, when it matches one. */
+        val landmark: String? = null,
     ) {
-        /** True when the model was asked and answered that it cannot see the screen. */
+        /** True when the model was asked and answered that it cannot see this screen. */
         val blind: Boolean get() = looksLike == UNKNOWN
-
-        /** A hint the model can act on, derived from the picture alone. */
-        val note: String?
-            get() = when {
-                landmark != null -> "this is the screen of “$landmark”"
-                changedByAction && stableFrames == 0 -> "the picture changed while you acted: the game answered you"
-                stableFrames >= WAITING_FRAMES -> "the picture has not changed for $stableFrames frames: the game is " +
-                    "waiting for input (press something, or move the selection)"
-                else -> "the picture did not change while you acted: that action did nothing visible"
-            }
 
         /** One line for the panel and the decision history. */
         fun summary(): String = buildString {
-            append(looksLike ?: "screen not read")
-            append(" · stable $stableFrames frames")
+            append(looksLike ?: "not read")
+            append(" · stable $stableFrames")
             append(if (changedByAction) " · answered you" else " · nothing moved")
             landmark?.let { append(" · $it") }
         }
     }
 
-    private var readHash: Long? = null
-    private var readKind: String? = null
+    /** One decision's worth of screen knowledge: what each screen shows, and what that means. */
+    data class View(
+        val top: ScreenView,
+        val bottom: ScreenView,
+        /** A landmark that covers the whole frame (a game whose walkthrough captured no region), when one matches. */
+        val landmark: String? = null,
+    ) {
+        /** The screens, in the order the pictures are attached. */
+        val screens: List<ScreenView> get() = listOf(top, bottom)
+
+        /** True when the model answered that it cannot see the screens at all. */
+        val blind: Boolean get() = top.blind && bottom.blind
+
+        /** A hint the model can act on, derived from the pictures alone: every fact there is, not just one. */
+        val note: String?
+            get() = buildList {
+                landmark?.let { add("this is the screen of “$it”") }
+                screens.mapNotNull { it.landmark }.forEach { add("a screen is the screen of “$it”") }
+                answered?.let { add("the ${it.screen.label} changed while you acted: the game answered you there") }
+                waiting?.let {
+                    add("the ${it.screen.label} has not changed for ${it.stableFrames} frames: that is where the " +
+                        "game is waiting for input")
+                }
+            }.joinToString(" · ").ifEmpty { "neither screen changed while you acted: that action did nothing visible" }
+
+        /** The screen the game answered on, when exactly one moved. */
+        private val answered: ScreenView? get() = screens.singleOrNull { it.changedByAction }
+
+        /** The screen that has been still long enough to be the one waiting for input. */
+        private val waiting: ScreenView? get() = screens.filter { it.stableFrames >= WAITING_FRAMES }.maxByOrNull { it.stableFrames }
+
+        /** One line for the panel and the decision history. */
+        fun summary(): String = "top ${top.summary()} | bottom ${bottom.summary()}"
+    }
+
+    /** What the model answered about each screen, and which picture each answer was made on. */
+    private val readHashes = mutableMapOf<Screens.Screen, Long>()
+    private val readKinds = mutableMapOf<Screens.Screen, String>()
 
     /** Forgets everything: a new game, or a chapter changed by hand. */
     fun reset() {
-        readHash = null
-        readKind = null
-    }
-
-    /** Updates the picture's landmark match and the reading, without asking any model. */
-    fun view(frame: Frame?, chapter: WalkthroughChapter?, changedByAction: Boolean, stableFrames: Int): View {
-        val hash = frame?.let(FrameHash::dHash)
-        return View(
-            stableFrames = stableFrames,
-            changedByAction = changedByAction,
-            looksLike = readKind?.takeIf { hash == readHash },
-            landmark = chapter?.milestone?.let { milestone ->
-                if (milestone.kind != MilestoneKind.FRAME_HASH) null
-                else hash?.takeIf { FrameHash.matches(it, milestone.hashes, milestone.threshold) }?.let { chapter.title }
-            },
-        )
+        readHashes.clear()
+        readKinds.clear()
     }
 
     /**
-     * Asks [model] what the picture shows, when the picture is new and nobody asked about it yet. Returns the reading
+     * What each screen is doing right now, without asking any model: the landmark each one matches (a chapter's
+     * landmark names a region, or the whole frame), and what the last action did to each of them ([reports], measured
+     * by the player frame by frame while the action ran).
+     */
+    fun view(frame: Frame?, chapter: WalkthroughChapter?, reports: Map<Screens.Screen, ActionReport>): View {
+        val milestone = chapter?.milestone?.takeIf { it.kind == MilestoneKind.FRAME_HASH }
+        val region = milestone?.region?.takeIf { it.size == 4 }
+        val wholeFrameLandmark = milestone
+            ?.takeIf { region == null }
+            ?.let { candidate -> frame?.let { FrameHash.dHash(it) }?.takeIf { FrameHash.matches(it, candidate.hashes, candidate.threshold) } }
+            ?.let { chapter.title }
+
+        fun screenView(screen: Screens.Screen): ScreenView {
+            val report = reports[screen] ?: ActionReport()
+            val hash = frame?.let { Screens.hashOf(it, screen) }
+            val matchesThisScreen = milestone != null && region != null && regionMatches(region, frame, screen) &&
+                hash != null && FrameHash.matches(hash, milestone.hashes, milestone.threshold)
+            return ScreenView(
+                screen = screen,
+                looksLike = readKinds[screen]?.takeIf { hash != null && readHashes[screen] == hash },
+                stableFrames = report.stableFrames,
+                changedByAction = report.changed,
+                landmark = chapter?.title?.takeIf { matchesThisScreen },
+            )
+        }
+
+        return View(top = screenView(Screens.Screen.TOP), bottom = screenView(Screens.Screen.BOTTOM), landmark = wholeFrameLandmark)
+    }
+
+    /** True when a milestone's region is (mostly) this screen, so its landmark belongs to it. */
+    private fun regionMatches(region: List<Int>, frame: Frame?, screen: Screens.Screen): Boolean {
+        val frameHeight = frame?.height ?: return false
+        val middle = frameHeight / 2
+        val top = region[1]
+        val bottom = region[1] + region[3]
+        return if (screen == Screens.Screen.TOP) top < middle else bottom > middle
+    }
+
+    /**
+     * Asks [model] what [screen] shows, when that screen is new and nobody asked about it yet. Returns the reading
      * (`unknown` when the model cannot see images), or the previous reading when there is nothing new to ask.
      *
      * [onError] is told when the question itself failed (a model without image support, a timeout...), so the app can
      * say why nothing is being read instead of silently showing "not read".
      */
-    suspend fun read(model: DecisionModel, frame: Frame?, onError: (String) -> Unit = {}): String? {
-        val hash = frame?.let(FrameHash::dHash) ?: return null
-        if (hash == readHash) return readKind
+    suspend fun read(
+        model: DecisionModel,
+        frame: Frame?,
+        screen: Screens.Screen,
+        onError: (String) -> Unit = {},
+    ): String? {
+        val hash = frame?.let { Screens.hashOf(it, screen) } ?: return null
+        if (readHashes[screen] == hash) return readKinds[screen]
         val result = runCatching {
             model.choose(
                 ChoiceRequest(
                     state = buildJsonObject {
-                        put("question", "What is the game showing right now?")
+                        put("question", "What is the ${screen.label} of this Nintendo DS showing right now?")
+                        put("which_picture", "The picture to look at is the one labelled “${screen.label}”.")
                         put(
                             "why",
-                            "Another agent plays this game through a memory reader that cannot see the screen: this " +
-                                "reading is its only view of it, and it decides what to press from it.",
+                            "Another agent plays this game through a memory reader that cannot see the screens: these " +
+                                "readings are its only view of them, and it decides what to press from them.",
                         )
                     },
-                    instructions = "You are looking at a Nintendo DS screenshot: two 256x192 screens, the top one above " +
-                        "the bottom one. Answer with the option that best describes what the game is showing and what " +
-                        "the player would respond to. If no image is attached, or you cannot see one, answer `unknown` " +
-                        "— never guess a screen you cannot see.",
+                    instructions = "You are looking at the ${screen.label} of a Nintendo DS: one 256x192 screen, sent " +
+                        "as its own picture (the other screen is a separate picture). Answer with the option that best " +
+                        "describes what this screen shows and what the player would respond to. If no image is " +
+                        "attached, or you cannot see one, answer `unknown` — never guess a screen you cannot see.",
                     options = SCREENS,
                     // Reading a picture is a vision task, not a formality: the model is allowed to think about it.
                     reasoning = true,
@@ -115,12 +174,14 @@ class ScreenState {
             )
         }.onFailure { failure ->
             onError(failure.message ?: failure::class.java.simpleName)
-        }.getOrNull() ?: return readKind
-        readHash = hash
-        readKind = result.choice.takeIf { it in SCREENS.keys } ?: UNKNOWN
-        return readKind
+        }.getOrNull() ?: return readKinds[screen]
+        readHashes[screen] = hash
+        val kind = result.choice.takeIf { it in SCREENS.keys } ?: UNKNOWN
+        readKinds[screen] = kind
+        return kind
     }
 
+    /** What the model says a screen shows, and what the app can derive from it. */
     private companion object {
         /** The reading that means "this model cannot see the screenshot". */
         const val UNKNOWN = "unknown"
@@ -139,4 +200,7 @@ class ScreenState {
         )
     }
 }
+
+/** What one action did to one screen, measured by the player while the action ran. */
+data class ActionReport(val changed: Boolean = false, val stableFrames: Int = 0)
 

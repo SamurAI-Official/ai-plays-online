@@ -137,56 +137,62 @@ the client asks for 2048 and says so when the model answers nothing).
 
 ## What the model is told about the picture
 
-A reader reads memory; it cannot say "a dialogue box is open and it wants A". `ScreenState` closes that gap, and
-everything it knows goes into the request's `screen` block:
+A reader reads memory; it cannot say "a dialogue box is open and it wants A". `ScreenState` closes that gap — and it
+does so **per screen**, because a DS game uses both (a map above a touch menu, an illustration above a dialogue box).
+Everything it knows goes into the request's `screen` block:
 
 ```json
 "screen": {
-  "looks_like": "dialogue",
-  "stable_frames": 92,
-  "changed_by_your_action": true,
-  "landmark": "Start the campaign",
-  "what_that_means": "this is the screen of “Start the campaign”"
+  "top":    {"looks_like": "dialogue", "stable_frames": 92, "changed_by_your_action": false, "landmark": "Start the campaign"},
+  "bottom": {"looks_like": "menu",     "stable_frames": 4,  "changed_by_your_action": true},
+  "what_that_means": "the bottom screen changed while you acted: the game answered you there · the top screen has not changed for 92 frames: that is where the game is waiting for input",
+  "note": "A Nintendo DS has two screens and games use both: ... the bottom one is the touch screen, so `touch_x_y` taps there."
 }
 ```
 
-- **`stable_frames` and `changed_by_your_action`** are measured *while the action runs*, frame by frame, not guessed
-  between decisions: `stable 30 frames · nothing moved` means the press did nothing visible, `stable 81 frames ·
-  answered you` means the game moved on. This is what stops an agent believing it is stuck on a boot screen while the
-  game is animating: a stable picture is a game *waiting for input*, a moving one is loading, and either way the app
-  says so.
-- **`looks_like`** is the model's own reading of the screenshot the app attaches to every request: the app asks it,
-  with constrained options (`dialogue`, `menu`, `field`, `loading`, `intro`, `unknown`), and caches the answer per
-  picture. It is only asked when the picture has settled (20 frames), because that is when a reading is useful and
-  reliable. A model that cannot see images answers `unknown`, and the request then says so outright:
-  *"the model answered that it cannot see the screenshot: only `reader` is available... pick a model with vision"*.
-  The panel shows the same line under **Screen**, so a user can see at a glance whether their model reads the screen.
-- **`landmark`** names the screen outright when it matches a walkthrough chapter's captured landmark.
+- **`stable_frames` and `changed_by_your_action`** are measured *per screen*, frame by frame, while the action runs —
+  not guessed between decisions. An animated HUD on one screen no longer hides the other being still, and
+  `changed_by_your_action` says *which* screen the game answered on. This is what stops an agent believing it is stuck
+  on a boot screen: a still screen is a game *waiting for input*, a moving one is loading.
+- **`looks_like`** is the model's own reading of that screen, asked per screen ("what is the bottom screen of this
+  Nintendo DS showing right now?"), with constrained options (`dialogue`, `menu`, `field`, `loading`, `intro`,
+  `unknown`) and cached per screen and picture. It is only asked once *that* screen has settled (20 frames), because
+  that is when a reading is useful and reliable. A model that cannot see images answers `unknown`, and the request then
+  says so outright. The panel shows the same line under **Screen**, so a user can see at a glance whether their model
+  reads the screens.
+- **`landmark`** names a screen outright when it matches a walkthrough chapter's captured landmark — a landmark that
+  names a region belongs to that screen (Age of Empires' menu landmark is the bottom screen), and one that covers the
+  whole frame is reported on its own.
 
-The **Read the screen** switch (Experiments) turns the reading off; the stability, the change and the landmark match
-stay (they are free). Nothing here needs a vision model to be useful, but only a vision model can read what a dialogue
-box *says*.
+**Both screens are sent as two pictures**, cropped and labelled ("top screen", "bottom screen"), rather than one
+combined picture: a vision encoder resizes what it is given, so one 256x384 image gives each screen half the detail,
+which is exactly what small dialogue text suffers from. The text of the request names each picture, so the model knows
+which is which. The **Read the screen** switch turns the readings off; the two pictures, the stability, the change and
+the landmark matching stay.
 
 ## Checking that the model can see at all
 
-A vision model only helps if the screenshot actually reaches it, so there is a tool for exactly that:
+A vision model only helps if the pictures reach it, so there is a tool for exactly that:
 
 ```bash
 LLM_PROVIDER=openai LLM_MODEL=<a vision model> OPENAI_BASE_URL=http://host:1234 OPENAI_API_KEY=lm-studio \
   ./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.VisionCheckKt
 ```
 
-It sends a solid red square and asks the model what colour it is:
+It sends a solid red square, then a DS-shaped frame whose top screen is red and bottom screen is blue — the way the app
+sends them (two labelled crops) — and asks about each:
 
 ```text
 == vision check: OPENAI · ornith-1.0-9b (base URL http://100.102.229.67:1234) ==
-answer: Red
-tokens: 45 in / 2 out
-== the model sees images: the screenshot reaches it ==
+1. one picture: Red
+   → the model sees images: the screenshot reaches it
+2. both screens: top=red bottom=blue
+   → both screens are seen, and told apart
 ```
 
-If it answers anything else, the agent cannot see the screen no matter what the prompt says: check that the loaded
-model is the multimodal one, and that the endpoint accepts image parts (LM Studio reports a load failure as HTTP 400).
+If the first check fails, no prompt work will make the agent see (check that the loaded model is the multimodal one and
+that the endpoint accepts image parts — LM Studio reports a load failure as HTTP 400). If the second fails, the agent
+sees one screen and guesses the other.
 
 ## What a reader is not
 

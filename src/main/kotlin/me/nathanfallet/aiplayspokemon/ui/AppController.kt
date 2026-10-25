@@ -48,6 +48,7 @@ import me.nathanfallet.aiplayspokemon.decision.llm.LlmDecisionModel
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmProvider
 import me.nathanfallet.aiplayspokemon.decision.llm.OllamaModels
 import me.nathanfallet.aiplayspokemon.emulator.ScreenWatcher
+import me.nathanfallet.aiplayspokemon.emulator.Screens
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import java.nio.file.Path
 import me.nathanfallet.aiplayspokemon.games.GameProfile
@@ -435,7 +436,9 @@ class AppController(
                         LlmProvider.OLLAMA -> config.ollamaBaseUrl
                         else -> null
                     },
-                    latestFrame = { emulator.frames.value },
+                    // Both screens, cropped and labelled: a DS game uses them both, and one combined picture would
+                    // give each of them half the pixels (see emulator/Screens.kt).
+                    screens = { emulator.frames.value?.let(Screens::picturesOf).orEmpty() },
                 )
             }
         }
