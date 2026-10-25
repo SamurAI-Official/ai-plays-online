@@ -102,6 +102,18 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$plist")" = "public.app-category.games"
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = "11.0"
 
+          # A picker-only smoke test cannot catch missing jlink modules: first ROM launch needs java.net.http
+          # to download the emulator core. Inspect the packaged image itself so that cannot regress unnoticed.
+          runtime_image="$app/Contents/runtime/Contents/Home/lib/modules"
+          module_listing="build/packaged-runtime-modules.txt"
+          "$JAVA_HOME/bin/jimage" list "$runtime_image" > "$module_listing"
+          for module in java.instrument java.management java.net.http jdk.unsupported; do
+            grep -q "^Module: ${module}\$" "$module_listing" || {
+              echo "Packaged Java runtime is missing $module"
+              exit 1
+            }
+          done
+
           dmg=$(ls build/compose/binaries/main/dmg/*.dmg | head -n 1)
           asset="ai-plays-online-${TAG}-macos-arm64.dmg"
           cp "$dmg" "$asset"

@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "me.nathanfallet.aiplayspokemon"
-version = "1.0.0"
+version = "1.0.1"
 
 kotlin {
     jvmToolchain(21)
@@ -58,8 +58,11 @@ compose.desktop {
         if (System.getProperty("os.name").startsWith("Mac")) jvmArgs += listOf("-Xdock:name=AI plays Online")
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            // jlink otherwise omits these modules used by the core downloader and decision-model dependencies.
+            // Keep in sync with `./gradlew suggestRuntimeModules`; java.net.http is required for first ROM launch.
+            modules("java.instrument", "java.management", "java.net.http", "jdk.unsupported")
             packageName = "AI Plays Online"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
             macOS {
                 bundleID = "me.nathanfallet.aiplaysonline"
                 dockName = "AI Plays Online"
