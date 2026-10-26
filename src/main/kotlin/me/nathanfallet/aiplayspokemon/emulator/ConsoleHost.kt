@@ -56,6 +56,14 @@ class ConsoleHost(
     private val spec: LibretroCoreSpec,
     private val romPath: Path,
     private val dataDirectory: Path,
+    /**
+     * Online play: when set, the console is driven by a rollback session ([NetplayDriver]) instead of
+     * the free run, and the AI's lease is refused (the session owns the frame clock). Null plays
+     * offline, as before.
+     */
+    private val netplay: NetplaySettings? = null,
+    /** SHA-256 of the ROM, for the netplay handshake. Required when [netplay] is set. */
+    private val romSha256: String? = null,
     /** Where the sound goes: the default audio device (tests capture it instead). */
     private val audioDevice: (sampleRate: Double) -> AudioDevice? = { AudioDevice.default(it) },
 ) : Emulator {
@@ -107,6 +115,17 @@ class ConsoleHost(
 
     /** Who drives the console right now (shown in the UI and to agents). */
     val driver: StateFlow<Driver> = _driver.asStateFlow()
+
+    /** The online session, when the console was opened for netplay (console thread only). */
+    private var netplayDriver: NetplayDriver? = null
+
+    private val _netplayStatus = MutableStateFlow<NetplayStatus?>(null)
+
+    /** Live state of the online session, or null when playing offline. */
+    val netplayStatus: StateFlow<NetplayStatus?> = _netplayStatus.asStateFlow()
+
+    /** True when this console was opened for online play. */
+    val isOnline: Boolean get() = netplay != null
 
     /** Says who drives the console, remembering the change once (the loop says it after every frame). */
     private fun drive(driver: Driver) {
@@ -172,10 +191,23 @@ class ConsoleHost(
             ready.countDown()
             return@thread
         }
+        // The online session is built on the console thread (libretro cores are not thread-safe) and
+        // before `ready`: a missing core, a taken port or a refused save state must fail the startup,
+        // not silently leave the game offline.
+        try {
+            netplayDriver = netplay?.let { settings ->
+                NetplayDriver(console, settings, requireNotNull(romSha256) { "netplay needs the ROM's SHA-256" }, systemLog::add)
+            }
+        } catch (error: Throwable) {
+            startupError = error
+            ready.countDown()
+            return@thread
+        }
         ready.countDown()
         try {
             loop(console)
         } finally {
+            netplayDriver?.close()
             shadowAudio.close()
             console.close() // also makes the core write the in-game save (.sav) to disk
             audio.close()
@@ -185,6 +217,7 @@ class ConsoleHost(
     init {
         ready.await()
         startupError?.let { throw IllegalStateException("Failed to start ${spec.name}", it) }
+        _netplayStatus.value = netplayDriver?.status?.value
     }
 
     /** A frame was emulated since the game was last idle: the next idle loop starts a pause (console thread only). */
@@ -199,6 +232,11 @@ class ConsoleHost(
         while (!closed) {
             while (true) tasks.poll()?.invoke(console) ?: break
             reads.serve { mainRam(console) }
+            val netplay = netplayDriver
+            if (netplay != null) {
+                netplayFrame(console, netplay)
+                continue
+            }
             if (!status.value.running) {
                 if (steppedSinceIdle && shadowAudio.delaysPause(console)) {
                     // The pause starts a frame later, at a frame its music can be resynced from (see ShadowAudio).
@@ -218,6 +256,27 @@ class ConsoleHost(
             console.step(1, InputFrame(humanButtons.value, _touching.value))
             afterFrame(console)
         }
+    }
+
+    /**
+     * One frame of an online session. The session owns the clock: it takes the local input, waits for
+     * the peer's (lockstep) or predicts it (rollback), runs the console and re-simulates if a
+     * prediction was wrong. Music during pauses and fast-forward are off online: a pause only pumps
+     * the transport (so the session stays alive and still times out), and the pace is the peer's.
+     */
+    private fun netplayFrame(console: LibretroConsole, netplay: NetplayDriver) {
+        if (!status.value.running) {
+            drive(Driver.Idle)
+            netplay.idle()
+            _netplayStatus.value = netplay.status.value
+            Thread.sleep(5)
+            pacer.reset()
+            return
+        }
+        drive(Driver.Human)
+        val ran = netplay.tick(InputFrame(humanButtons.value, _touching.value), render = true)
+        _netplayStatus.value = netplay.status.value
+        if (ran) afterFrame(console) else Thread.sleep(1)
     }
 
     /** Bookkeeping after every emulated frame, free run or agent: listeners, counters, then pacing. */
@@ -244,6 +303,12 @@ class ConsoleHost(
         onProgress: (dev.kotlinds.pokemonclient.runtime.ActionProgress) -> Unit = {},
         block: ActionScope.() -> T,
     ): T {
+        // Online, the session owns the frame clock: an action that steps the console itself would
+        // bypass the rollback loop and desync the two peers. The agent plays online through the
+        // session's input queue instead (a follow-up; see docs/readers.md and the netplay notes).
+        check(netplayDriver == null) {
+            "this console is driven by an online session: the agent cannot take the controller yet"
+        }
         userPaused.first { !it }
         return onConsoleThread { console ->
             leaseActive = true
@@ -326,6 +391,8 @@ class ConsoleHost(
     }
 
     override fun setFastForward(enabled: Boolean) {
+        // Online the pace is the peer's: running unpaced would race ahead of it (and desync rollback).
+        if (netplay != null) return
         _status.update { it.copy(fastForward = enabled) }
         updateAudio()
     }
@@ -392,24 +459,44 @@ class ConsoleHost(
         return RamMemory(ramBuffer)
     }
 
-    override suspend fun saveState(slot: Int): Boolean = onConsoleThread { console ->
-        Files.createDirectories(saveStateDirectory)
-        Files.write(stateFile(slot), console.saveState())
-        systemLog.add("state $slot saved")
-        true
+    override suspend fun saveState(slot: Int): Boolean {
+        // A state saved online belongs to one run of the session; loading it later would desync both
+        // peers (and the peer's console would keep going). Refused rather than silently wrong.
+        if (netplay != null) {
+            systemLog.add("state $slot: not saved (online session)")
+            return false
+        }
+        return onConsoleThread { console ->
+            Files.createDirectories(saveStateDirectory)
+            Files.write(stateFile(slot), console.saveState())
+            systemLog.add("state $slot saved")
+            true
+        }
     }
 
-    override suspend fun loadState(slot: Int): Boolean = onConsoleThread { console ->
-        shadowAudio.discard() // the paused game is replaced: its shadow's music isn't the new one's
-        val file = stateFile(slot)
-        val loaded = Files.exists(file) && console.loadState(Files.readAllBytes(file))
-        systemLog.add(if (loaded) "state $slot loaded" else "state $slot: nothing to load")
-        afterLoad(loaded, stateLoadedListener)
+    override suspend fun loadState(slot: Int): Boolean {
+        if (netplay != null) {
+            systemLog.add("state $slot: not loaded (online session)")
+            return false
+        }
+        return onConsoleThread { console ->
+            shadowAudio.discard() // the paused game is replaced: its shadow's music isn't the new one's
+            val file = stateFile(slot)
+            val loaded = Files.exists(file) && console.loadState(Files.readAllBytes(file))
+            systemLog.add(if (loaded) "state $slot loaded" else "state $slot: nothing to load")
+            afterLoad(loaded, stateLoadedListener)
+        }
     }
 
-    override suspend fun reset() = onConsoleThread { console ->
-        shadowAudio.discard()
-        console.reset()
+    override suspend fun reset() {
+        if (netplay != null) {
+            systemLog.add("reset: not done (online session)")
+            return
+        }
+        onConsoleThread { console ->
+            shadowAudio.discard()
+            console.reset()
+        }
     }
 
     override fun close() {

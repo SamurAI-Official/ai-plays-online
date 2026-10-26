@@ -5,6 +5,10 @@ import me.nathanfallet.aiplayspokemon.agent.PlayerSettings
 import me.nathanfallet.aiplayspokemon.decision.DecisionBackend
 import me.nathanfallet.aiplayspokemon.decision.jev.JevClient
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmProvider
+import me.nathanfallet.aiplayspokemon.emulator.NetplayRole
+import me.nathanfallet.aiplayspokemon.emulator.NetplaySettings
+import dev.kotlinds.libretrorollback.Mode
+import dev.kotlinds.libretrorollback.SnapshotStrategy
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -151,6 +155,51 @@ class AppConfig(
      */
     val walkthroughUrl: String?
         get() = setting("AI_PLAYS_ONLINE_WALKTHROUGH_URL", "walkthrough.url")
+
+    /**
+     * Online play, or null when playing offline.
+     *
+     * | Setting        | Environment variable                        | Config key                | Default |
+     * |----------------|---------------------------------------------|---------------------------|---------|
+     * | Role           | `AI_PLAYS_ONLINE_NETPLAY` (`host` / `join`) | `netplay.role`            | off     |
+     * | Peer           | `AI_PLAYS_ONLINE_NETPLAY_PEER` (`host:port`) | `netplay.peer`           | —       |
+     * | Local port     | `AI_PLAYS_ONLINE_NETPLAY_BIND`              | `netplay.bindPort`        | 7000 / 7001 |
+     * | Mode           | `AI_PLAYS_ONLINE_NETPLAY_MODE` (`rollback` / `lockstep`) | `netplay.mode` | lockstep |
+     * | Input delay    | `AI_PLAYS_ONLINE_NETPLAY_INPUT_DELAY`       | `netplay.inputDelay`      | 2       |
+     * | Prediction     | `AI_PLAYS_ONLINE_NETPLAY_PREDICTION`        | `netplay.prediction`      | 8       |
+     * | Snapshots      | `AI_PLAYS_ONLINE_NETPLAY_SNAPSHOTS` (`full` / `delta`) | `netplay.snapshots` | delta |
+     * | Keyframes      | `AI_PLAYS_ONLINE_NETPLAY_KEYFRAME`          | `netplay.keyframe`        | 30      |
+     *
+     * Both peers must use the same mode, input delay, prediction and snapshots: the handshake compares
+     * them, so a mismatch is refused instead of silently desyncing. A missing or malformed peer is an
+     * error (not a silent fallback to offline), because it means the session was asked for and cannot
+     * be built.
+     */
+    val netplay: NetplaySettings?
+        get() {
+            val role = enumSetting<NetplayRole>("AI_PLAYS_ONLINE_NETPLAY", "netplay.role") ?: return null
+            val peer = requireNotNull(setting("AI_PLAYS_ONLINE_NETPLAY_PEER", "netplay.peer")) {
+                "netplay: the peer is missing; set AI_PLAYS_ONLINE_NETPLAY_PEER (or netplay.peer) to host:port"
+            }
+            val host = peer.substringBeforeLast(':', "").trim()
+            val port = peer.substringAfterLast(':', "").trim().toIntOrNull()
+            require(host.isNotEmpty() && port in 1..65535) {
+                "netplay: the peer must be host:port, got '$peer'"
+            }
+            return NetplaySettings(
+                role = role,
+                bindPort = setting("AI_PLAYS_ONLINE_NETPLAY_BIND", "netplay.bindPort")?.toIntOrNull()
+                    ?: if (role == NetplayRole.HOST) 7000 else 7001,
+                peerHost = host,
+                peerPort = port!!,
+                mode = enumSetting<Mode>("AI_PLAYS_ONLINE_NETPLAY_MODE", "netplay.mode") ?: Mode.LOCKSTEP,
+                inputDelay = setting("AI_PLAYS_ONLINE_NETPLAY_INPUT_DELAY", "netplay.inputDelay")?.toIntOrNull() ?: 2,
+                maxPredictionFrames = setting("AI_PLAYS_ONLINE_NETPLAY_PREDICTION", "netplay.prediction")?.toIntOrNull() ?: 8,
+                snapshotStrategy = enumSetting<SnapshotStrategy>("AI_PLAYS_ONLINE_NETPLAY_SNAPSHOTS", "netplay.snapshots")
+                    ?: SnapshotStrategy.DELTA,
+                deltaKeyframeInterval = setting("AI_PLAYS_ONLINE_NETPLAY_KEYFRAME", "netplay.keyframe")?.toIntOrNull() ?: 30,
+            )
+        }
 
     private val LlmProvider.key get() = name.lowercase()
 

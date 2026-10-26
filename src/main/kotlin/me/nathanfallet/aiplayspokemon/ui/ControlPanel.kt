@@ -94,11 +94,14 @@ fun ControlPanel(
         // Emulator controls (wrapping: they don't all fit on one line in a narrow panel)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = controller::togglePause) { Text(if (status.running) "Pause game" else "Resume game") }
-            FilterChip(
-                selected = status.fastForward,
-                onClick = { controller.emulator.setFastForward(!status.fastForward) },
-                label = { Text("Fast forward") },
-            )
+            // Online the pace is the peer's: fast-forward is refused by the console, so the chip is hidden.
+            if (!controller.emulator.isOnline) {
+                FilterChip(
+                    selected = status.fastForward,
+                    onClick = { controller.emulator.setFastForward(!status.fastForward) },
+                    label = { Text("Fast forward") },
+                )
+            }
             FilterChip(
                 selected = !status.muted,
                 onClick = { controller.emulator.setMuted(!status.muted) },
@@ -108,6 +111,8 @@ fun ControlPanel(
             WaitForSongChangeChip(controller)
             NarrationChip(controller)
         }
+
+        NetplaySection(controller)
 
         InputDebugSection(controller)
         NarrationReadout(controller)
@@ -128,6 +133,7 @@ fun ControlPanel(
         val currentPlayer = player
         val reader by controller.reader.collectAsState()
         when {
+            controller.emulator.isOnline -> NetplayPlayerNote()
             controller.game == null && reader != null && currentPlayer == null -> Text(
                 "This game has a reader (see Reader above): the AI plays it through it, so a model (or its API key) " +
                     "is what is missing.",
@@ -143,6 +149,48 @@ fun ControlPanel(
         HorizontalDivider()
         KeyboardHelp()
     }
+}
+
+/**
+ * The online session: who plays, where the peer is, and what the engine reports (frame, rollbacks,
+ * predicted frames, snapshot memory, last event). Shown only when the game was opened for netplay.
+ */
+@Composable
+private fun NetplaySection(controller: AppController) {
+    val status by controller.emulator.netplayStatus.collectAsState()
+    val current = status ?: return
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Playing online", fontWeight = FontWeight.Bold)
+        Text(
+            current.summary,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (current.stopped != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            "frame ${current.frame} · peer ${current.remoteFrame} · rollbacks ${current.rollbacks} " +
+                "(max ${current.maxRollbackFrames}) · predicted ${current.predictedFrames} · " +
+                "state ${"%.1f".format(current.stateMiB)} MiB",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+        )
+        current.lastEvent?.let { Text("Last event: $it", style = MaterialTheme.typography.bodySmall) }
+        Text(
+            "Save states, fast-forward and music during pauses are off online (they would desync the session).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** What the AI panel says online: the agent has no way into a session-driven console yet. */
+@Composable
+private fun NetplayPlayerNote() {
+    Text(
+        "Online, the session owns the frame clock: the AI cannot take the controller yet, you play " +
+            "both sides (your input is sent, the peer's comes back). See the plan: the agent plays " +
+            "through the session's input queue next.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 /**

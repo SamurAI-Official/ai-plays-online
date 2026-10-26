@@ -22,6 +22,7 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 pokemon-client = { module = "dev.kotlinds:pokemon-client", version.ref = "pokemon-client" }
 pokemon-client-libretro = { module = "dev.kotlinds:pokemon-client-libretro", version.ref = "pokemon-client" }
+pokemon-client-rollback = { module = "dev.kotlinds:pokemon-client-rollback", version.ref = "pokemon-client" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 mcp-server = { module = "io.modelcontextprotocol:kotlin-sdk-server", version.ref = "mcp" }
 ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }

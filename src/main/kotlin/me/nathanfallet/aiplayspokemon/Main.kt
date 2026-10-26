@@ -15,9 +15,11 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import me.nathanfallet.aiplayspokemon.config.AppConfig
+import dev.kotlinds.libretrorollback.Mode
 import dev.kotlinds.pokemonclient.libretro.LibretroCoreSpec
 import kotlinx.coroutines.runBlocking
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
+import me.nathanfallet.aiplayspokemon.emulator.NetplaySettings
 import dev.kotlinds.pokemonclient.PokemonGames
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.OnlineWalkthroughSource
@@ -45,6 +47,9 @@ import java.nio.file.Path
  */
 fun main(args: Array<String>) {
     val config = AppConfig.load(args)
+    // Online play is resolved before the UI starts: a missing peer or a bad port must fail loudly,
+    // never silently fall back to an offline game.
+    val netplay = config.netplay
 
     application {
         val scope = rememberCoroutineScope()
@@ -60,7 +65,7 @@ fun main(args: Array<String>) {
             session?.close()
             path?.let(config::saveRomPath)
             romPath = path
-            session = path?.let { OpenGame.open(config, it, scope) }
+            session = path?.let { OpenGame.open(config, it, scope, netplay) }
         }
 
         // A ROM on the command line (or in the ROM environment variable) is the only one opened without a click.
@@ -117,13 +122,33 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
     }
 
     companion object {
-        fun open(config: AppConfig, rom: Path, scope: CoroutineScope): OpenGame {
+        fun open(
+            config: AppConfig,
+            rom: Path,
+            scope: CoroutineScope,
+            netplay: NetplaySettings? = null,
+        ): OpenGame {
+            val bytes = rom.readBytes()
+            // Online play runs both peers' inputs into one console, so it needs a core both can run and,
+            // in rollback mode, a deterministic one: prefer the fixed-RTC build (see docs/games.md).
+            val spec = if (netplay != null) {
+                LibretroCoreSpec.forRomRollback(rom.toKotlinxPath(), config.emulatorCore)
+            } else {
+                LibretroCoreSpec.forRom(rom.toKotlinxPath(), config.emulatorCore)
+            }
+            if (netplay != null && netplay.mode == Mode.ROLLBACK && !spec.rollbackSafe) {
+                error(
+                    "${spec.name} is not rollback-safe (its RTC follows the host clock): " +
+                        "use AI_PLAYS_ONLINE_NETPLAY_MODE=lockstep, or a fixed-RTC core build",
+                )
+            }
             val emulator = ConsoleHost(
-                LibretroCoreSpec.forRom(rom.toKotlinxPath(), config.emulatorCore),
+                spec,
                 rom,
                 config.dataDirectory,
+                netplay = netplay,
+                romSha256 = netplay?.let { sha256OfRom(bytes) },
             )
-            val bytes = rom.readBytes()
             // What the app knows about this ROM: its own profile, or the generic one (screen only). A game with a
             // calibrated reader (`readers/<id>.json`) is a typed game: the app can read its state (see docs/readers.md).
             val profile = ReaderCatalog.apply(GameCatalog.detect(bytes, config.dataDirectory), config.dataDirectory)
@@ -143,6 +168,11 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
         }
     }
 }
+
+/** SHA-256 of the ROM, hex: the netplay handshake compares it, so both peers must run the same file. */
+internal fun sha256OfRom(bytes: ByteArray): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
 
 /** Asks for a ROM with the native file picker (the choice is remembered in the config file). */
 private fun chooseRom(): Path? {

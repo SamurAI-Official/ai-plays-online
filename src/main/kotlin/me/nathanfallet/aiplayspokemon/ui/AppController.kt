@@ -406,6 +406,12 @@ class AppController(
 
     private fun createPlayer() {
         _player.value?.pause()
+        // Online, the session owns the frame clock and the agent has no way in yet (ConsoleHost.lease
+        // refuses): no player, and the panel says why. The human plays both sides' inputs meanwhile.
+        if (emulator.isOnline) {
+            _player.value = null
+            return
+        }
         val game = game
         val model = createModel(_backend.value, emulator)
         // Screen-only games have no calibrated reader yet, but the AI can still play them through the screen

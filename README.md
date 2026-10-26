@@ -304,6 +304,39 @@ The agent keeps its own context between calls, and the game is frozen while it t
 
 You can play at the same time as the AI: the emulator merges both inputs.
 
+### Playing online (netplay)
+
+The app can drive the console through a **rollback session** instead of the free run, so two peers play
+the same console over UDP (the engine's `host` / `join` demo, put behind the app's UI). This is the
+**two-controller topology**: both players' inputs go into one emulated console. The DS local-wireless
+topology (two consoles, one per peer) needs the patched melonDS link ABI and the
+`libretro-rollback-libretro` adapter, which is not published for the app yet — see
+`engine/libretro-rollback/docs/two-console.md`.
+
+```bash
+# Host (player 1), then join (player 2) — on the same machine or across a LAN
+AI_PLAYS_ONLINE_NETPLAY=host AI_PLAYS_ONLINE_NETPLAY_PEER=127.0.0.1:7001 \
+  ./gradlew startApp -PappArgs="/path/to/game.nds"
+AI_PLAYS_ONLINE_NETPLAY=join AI_PLAYS_ONLINE_NETPLAY_PEER=127.0.0.1:7000 \
+  ./gradlew startApp -PappArgs="/path/to/game.nds"
+```
+
+Both peers must run the **same ROM** (the handshake compares its SHA-256), the same core build and the
+same engine settings (`mode`, input delay, prediction, snapshots): a mismatch is refused instead of
+silently desyncing. Online, the app picks the fixed-RTC core build when there is one, and refuses
+`rollback` mode on a core that is not rollback-safe (use `lockstep` for those, see
+[Tested games](#tested-games)). Save states, fast-forward and music during pauses are off online (each
+would desync the session), and the panel shows the session's frame, rollbacks and last event.
+
+**Fair play.** The session only ever carries inputs: there is no command channel, and the client
+library has no RAM-write API, so an agent or a user can only press buttons and touch the screen. What a
+peer-to-peer session can and cannot prove is written down in the engine's README ("Integrity"): a
+modified local client can still cheat, and that is what the relay/attestation tier is for.
+
+**The AI cannot take an online controller yet.** Online, the session owns the frame clock, and an
+action that steps the console itself would bypass it; `ConsoleHost.lease` refuses instead of
+desyncing. The agent plays through the session's input queue next (see the plan in the panel).
+
 ### Configuration
 
 Everything can be set in the app; settings are saved in `~/.ai-plays-online/config.properties` (next to the downloaded
@@ -325,6 +358,14 @@ core, in-game saves and save states). Environment variables take precedence:
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`                   | `llm.<provider>.apiKey` | entered in the app                     |
 | `AI_PLAYS_ONLINE_DATA_DIR`                                                    | —                       | `~/.ai-plays-online`                   |
 | `AI_PLAYS_ONLINE_ROMS_DIR`                                                    | `roms.dir`              | `<data>/roms` (the game picker's list) |
+| `AI_PLAYS_ONLINE_NETPLAY` (`host` / `join`)                                   | `netplay.role`          | off (single player)                    |
+| `AI_PLAYS_ONLINE_NETPLAY_PEER` (`host:port`)                                  | `netplay.peer`          | required when netplay is on            |
+| `AI_PLAYS_ONLINE_NETPLAY_BIND`                                                | `netplay.bindPort`      | `7000` (host) / `7001` (join)          |
+| `AI_PLAYS_ONLINE_NETPLAY_MODE` (`rollback` / `lockstep`)                      | `netplay.mode`          | `lockstep`                             |
+| `AI_PLAYS_ONLINE_NETPLAY_INPUT_DELAY`                                         | `netplay.inputDelay`    | `2`                                    |
+| `AI_PLAYS_ONLINE_NETPLAY_PREDICTION`                                          | `netplay.prediction`    | `8`                                    |
+| `AI_PLAYS_ONLINE_NETPLAY_SNAPSHOTS` (`full` / `delta`)                        | `netplay.snapshots`     | `delta`                                |
+| `AI_PLAYS_ONLINE_NETPLAY_KEYFRAME`                                            | `netplay.keyframe`      | `30`                                   |
 
 **Jev without the cloud.** Jev itself is only served by TypeSafe (no public weights). `JEV_ENDPOINT` can point to any
 server implementing the same `POST /v1/systemone` protocol, e.g. an open-weight reproduction of Jev served locally.

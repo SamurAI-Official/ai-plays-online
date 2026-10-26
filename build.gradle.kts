@@ -43,6 +43,8 @@ dependencies {
     // published with `./gradlew publishToMavenLocal` in that repository.
     implementation(libs.pokemon.client)
     implementation(libs.pokemon.client.libretro)
+    // Rollback netcode over LibretroConsole: the session, prediction and state ring the online mode drives.
+    implementation(libs.pokemon.client.rollback)
 
     // MCP server: lets an external agent (e.g. Claude Code) play through tools
     implementation(libs.mcp.server)
