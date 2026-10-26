@@ -128,12 +128,7 @@ fun ControlPanel(
         val currentPlayer = player
         val reader by controller.reader.collectAsState()
         when {
-            controller.game == null && reader == null -> Text(
-                "This game has no reader yet, so the app is learning one while it is played (see Reader below): play " +
-                    "on, or let the AI play, and it writes readers/<id>.json itself once the game has shown it a few " +
-                    "screens. Until then you can play it yourself.",
-            )
-            controller.game == null && currentPlayer == null -> Text(
+            controller.game == null && reader != null && currentPlayer == null -> Text(
                 "This game has a reader (see Reader above): the AI plays it through it, so a model (or its API key) " +
                     "is what is missing.",
             )
