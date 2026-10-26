@@ -113,4 +113,23 @@ class ReaderCatalogTest {
         assertNull(ReaderCatalog.of("broken", dataDirectory))
         assertNotNull(ReaderCatalog.apply(GameCatalog.generic, dataDirectory), "still a profile")
     }
+
+    /**
+     * The learner's evidence sits next to the readers it produces (`<id>.learning.json`): it must never be read as a
+     * reader, or a game would become "typed" from an unfinished calibration.
+     */
+    @Test
+    fun theLearnersEvidenceIsNotAReader() {
+        val dataDirectory = Files.createTempDirectory("readers")
+        Files.createDirectories(dataDirectory.resolve("readers"))
+        Files.writeString(
+            dataDirectory.resolve("readers").resolve("mario-kart-ds.learning.json"),
+            """{"id":"mario-kart-ds","samples":12,"screens":[],"found":[]}""",
+        )
+        assertNull(ReaderCatalog.of("mario-kart-ds", dataDirectory), "evidence is not a reader")
+        assertEquals(
+            AgentKind.SCREEN,
+            ReaderCatalog.apply(GameCatalog.builtIns.first { it.id == "mario-kart-ds" }, dataDirectory).agent,
+        )
+    }
 }

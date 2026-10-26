@@ -4,9 +4,11 @@ import dev.kotlinds.pokemonclient.console.MemoryRegion
 import dev.kotlinds.pokemonclient.libretro.LibretroConsole
 import dev.kotlinds.pokemonclient.libretro.LibretroCoreSpec
 import me.nathanfallet.aiplayspokemon.config.AppConfig
+import me.nathanfallet.aiplayspokemon.sha256OfRom
 import me.nathanfallet.aiplayspokemon.emulator.FrameHash
 import me.nathanfallet.aiplayspokemon.emulator.RamProbe
 import me.nathanfallet.aiplayspokemon.emulator.ReaderCalibrator
+import me.nathanfallet.aiplayspokemon.emulator.ReaderLearningStore
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
@@ -65,8 +67,24 @@ fun main(args: Array<String>) {
     val script = InputScript.parse(
         args.firstOrNull { it.startsWith("--route=") }?.substringAfter("--route=") ?: defaultRoute,
     )
+    // --resume: pick up the evidence a previous run left in <data>/readers/<id>.learning.json (and write it back at
+    // the end), which is what makes "the app does not retrain every time" observable headlessly.
+    val resume = args.any { it == "--resume" }
+    val romHash = sha256OfRom(Files.readAllBytes(rom))
 
     println("== learning a reader for ${profile.title} (${profile.id}) on $core ==")
+    if (resume) {
+        val evidence = ReaderLearningStore.of(profile.id, config.dataDirectory)
+        if (evidence == null || !evidence.matches(romHash)) {
+            println("nothing to resume (no evidence, or it is from another ROM)")
+        } else {
+            calibrator.restore(evidence)
+            println(
+                "resumed: ${evidence.samples} looks, ${evidence.screens.size} screens, part ${evidence.chunk + 1}, " +
+                    "${evidence.found.size} signals found before",
+            )
+        }
+    }
     val console = LibretroConsole(
         spec = LibretroCoreSpec.forRom(rom.toKotlinxPath(), core),
         rom = rom.toKotlinxPath(),
@@ -75,6 +93,7 @@ fun main(args: Array<String>) {
         onAudio = { _, _ -> },
     )
     var progress = calibrator.progress()
+    val samplesBefore = progress.samples
     try {
         var frame = 0
         while (frame < frames) {
@@ -89,6 +108,8 @@ fun main(args: Array<String>) {
     }
 
     println("looks: ${progress.samples}, screens: ${progress.screens}, addresses kept: ${progress.candidates}")
+    if (samplesBefore > 0) println("this run added ${progress.samples - samplesBefore} looks to the $samplesBefore resumed")
+
     println(
         "ready: ${progress.ready}, best signal separates ${progress.bestValues} screens and agrees " +
             "${"%.0f".format(progress.bestConsistency * 100)}% of the time",
@@ -124,6 +145,11 @@ fun main(args: Array<String>) {
         println("wrote $file")
     } else {
         println("(dry run: add --write to save it to ${config.dataDirectory.resolve("readers")})")
+    }
+    if (resume) {
+        // Written back so the next run resumes from here (the app does the same, a few seconds apart).
+        val file = ReaderLearningStore.write(calibrator.toEvidence(profile.id, romHash), config.dataDirectory)
+        println("wrote $file (${progress.samples} looks, ${progress.screens} screens, part ${progress.chunk + 1})")
     }
 }
 

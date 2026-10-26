@@ -111,6 +111,12 @@ class ReaderCalibrator(
     private var chunkStartSample = 0
     private var ramSize = 0
 
+    /**
+     * The part of memory to start examining at the next look, set by [restore]: a session that ended mid-sweep picks
+     * up where it stopped instead of going back to the first byte.
+     */
+    private var resumeChunk: Int? = null
+
     /** What each address of the current part held on each screen, and the screens this part has seen. */
     private var tallies = mutableMapOf<Int, MutableMap<Int, Tally>>()
     private val chunkScreens = mutableSetOf<Int>()
@@ -147,6 +153,7 @@ class ReaderCalibrator(
         chunkBaselineScreen = null
         chunkStartSample = 0
         ramSize = 0
+        resumeChunk = null
         tallies = mutableMapOf()
         chunkScreens.clear()
         dropped.clear()
@@ -155,6 +162,61 @@ class ReaderCalibrator(
         verified.clear()
         revisits.clear()
         refuted.clear()
+    }
+
+    /**
+     * What has been learned so far, as data a later session can resume from ([ReaderLearning], written to
+     * `<data>/readers/<id>.learning.json`). [id] is the game's profile id, and [romSha256] pins the evidence to one ROM.
+     *
+     * Everything that survives a restart is kept: the screens seen, the signals found with their evidence, how often
+     * the watched addresses were checked, and the part of memory the sweep had reached. The part being examined is
+     * **not** kept (its tallies belong to a RAM baseline from this session); [restore] re-baselines it.
+     */
+    fun toEvidence(id: String, romSha256: String = ""): ReaderLearning = ReaderLearning(
+        id = id,
+        romSha256 = romSha256,
+        updatedAt = System.currentTimeMillis(),
+        samples = samples,
+        chunk = chunkStart / chunkSize,
+        screens = screens.entries
+            .sortedBy { it.key }
+            .map { (index, looks) -> ReaderLearning.ScreenEvidence(index, screenPictures.getOrElse(index) { 0L }, looks) },
+        found = found.values.map { signal ->
+            ReaderLearning.SignalEvidence(signal.address, signal.byScreen, signal.distinct, signal.looks, signal.consistency)
+        },
+        watched = watched.entries.map { (address, byScreen) -> ReaderLearning.WatchedEvidence(address, byScreen) },
+        verified = verified.toMap(),
+        revisits = revisits.toMap(),
+        dropped = dropped.toList(),
+        refuted = refuted.toList(),
+    )
+
+    /**
+     * Resumes from [learning] (see [toEvidence]): the screens, the signals, the checks and the sweep position are put
+     * back, and the next look re-baselines the part of memory the previous session was examining.
+     *
+     * A resumed run therefore keeps everything from the parts of memory already finished, and re-examines the one in
+     * progress — the only part whose evidence was tied to a baseline that no longer exists.
+     */
+    fun restore(learning: ReaderLearning) {
+        reset()
+        samples = learning.samples
+        // Screens are indexed by position, so the pictures have to land at their own index (a gap is kept as a gap).
+        val pictures = MutableList((learning.screens.maxOfOrNull { it.index } ?: -1) + 1) { 0L }
+        learning.screens.forEach { screen ->
+            screens[screen.index] = screen.looks
+            pictures[screen.index] = screen.picture
+        }
+        screenPictures.addAll(pictures)
+        learning.found.forEach { signal ->
+            found[signal.address] = Signal(signal.address, signal.byScreen, signal.distinct, signal.looks, signal.consistency)
+        }
+        learning.watched.forEach { entry -> watched[entry.address] = entry.byScreen.toMutableMap() }
+        verified.putAll(learning.verified)
+        revisits.putAll(learning.revisits)
+        dropped += learning.dropped
+        refuted += learning.refuted
+        resumeChunk = learning.chunk
     }
 
     /**
@@ -168,7 +230,10 @@ class ReaderCalibrator(
         val screen = screenOf(picture)
         if (ramSize == 0) {
             ramSize = ram.size
-            startChunk(0, ram, screen)
+            // [restore] says which part of memory the previous session had reached: the sweep continues there, with a
+            // baseline taken now (the old one described a session that is over).
+            startChunk(resumeChunk ?: 0, ram, screen)
+            resumeChunk = null
         }
         samples++
         if (screen == null) {
@@ -223,6 +288,7 @@ class ReaderCalibrator(
         contradicted.forEach {
             watched.remove(it)
             refuted += it
+            refuted.boundTo(MAX_FORGOTTEN)
         }
     }
 
@@ -284,6 +350,7 @@ class ReaderCalibrator(
         if (tally.values.size > MAX_VALUES_PER_SCREEN) {
             tallies.remove(offset)
             dropped += RamProbe.MAIN_RAM_START + chunkStart + offset
+            dropped.boundTo(MAX_FORGOTTEN)
         }
     }
 
@@ -302,8 +369,40 @@ class ReaderCalibrator(
                     found[signal.address] = signal
                 }
             }
+            pruneFound()
             startChunk((chunkStart / chunkSize + 1) % chunkCount(), ram, screen)
         }
+    }
+
+    /**
+     * Keeps [found] to the signals worth keeping.
+     *
+     * A sweep of 4 MiB folds **every** address whose value moved with a screen — hundreds of thousands of them, and the
+     * evidence file then weighed 222 MB in a real run (Phantasy Star 0, 71 screens). Only the best handful are ever
+     * read: [candidates] reports the top [MAX_CANDIDATES], so keeping [MAX_FOUND] (twice that, so a signal still has
+     * room to improve before it is judged) loses nothing that could have been reported, and keeps both the memory and
+     * the file bounded.
+     */
+    private fun pruneFound() {
+        if (found.size <= MAX_FOUND) return
+        val keep = found.values
+            .sortedWith(
+                compareByDescending<Signal> { it.consistency }
+                    .thenByDescending { it.distinct }
+                    .thenByDescending { it.looks },
+            )
+            .take(MAX_FOUND)
+        found.clear()
+        keep.forEach { signal -> found[signal.address] = signal }
+    }
+
+    /**
+     * Keeps a "do not look at this again" set bounded: [dropped] and [refuted] are an optimization (they stop the
+     * learner from re-examining addresses it already judged), not a record worth keeping forever. The oldest entries
+     * go first; an address that turns out to matter is found again on the next sweep.
+     */
+    private fun <T> MutableSet<T>.boundTo(max: Int) {
+        while (size > max) remove(first())
     }
 
     /**
@@ -379,7 +478,7 @@ class ReaderCalibrator(
         if (best.isEmpty()) return null
         return ReaderSpec(
             id = id,
-            provenance = "learned while playing",
+            provenance = ReaderSpec.PROVENANCE_LEARNED,
             observations = best.mapIndexed { index, signal ->
                 Observation(
                     name = if (index == 0) "screen" else "signal_${index + 1}",
@@ -437,6 +536,16 @@ class ReaderCalibrator(
 
         /** Signals kept in the report: enough to choose from, few enough to stay cheap. */
         const val MAX_CANDIDATES = 32
+
+        /**
+         * Signals the learner remembers across the whole sweep (twice [MAX_CANDIDATES], so a signal still has room to
+         * improve before the top of the list is decided). Without this the evidence file reaches hundreds of megabytes:
+         * a real 71-screen run folded 705,824 addresses, of which 32 are ever reported.
+         */
+        const val MAX_FOUND = 64
+
+        /** Addresses kept in the "do not look at this again" sets ([dropped], [refuted]): an optimization, not a record. */
+        const val MAX_FORGOTTEN = 4096
 
         /** Addresses checked against every later look: each one costs a byte read per look. */
         const val MAX_WATCHED = 64

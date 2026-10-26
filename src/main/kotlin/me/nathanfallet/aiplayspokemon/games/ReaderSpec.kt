@@ -28,7 +28,15 @@ data class ReaderSpec(
     val progress: List<ProgressSignal> = emptyList(),
     /** Free text for whoever calibrates next (what was tried, what is still wrong). */
     val notes: String = "",
-)
+) {
+    /** True when the app may keep extending this reader: it learned it itself, nobody wrote it. */
+    val isLearned: Boolean get() = provenance == PROVENANCE_LEARNED
+
+    companion object {
+        /** [provenance] of a reader the app learned by itself while the game was played (see [ReaderCalibrator]). */
+        const val PROVENANCE_LEARNED = "learned while playing"
+    }
+}
 
 /** One value read from the game: a name, where it lives, and how to read it. */
 @Serializable

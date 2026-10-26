@@ -30,6 +30,7 @@ import dev.kotlinds.pokemonclient.console.Button
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import me.nathanfallet.aiplayspokemon.emulator.FrameHash
 import me.nathanfallet.aiplayspokemon.emulator.ReaderCalibrator
+import me.nathanfallet.aiplayspokemon.emulator.ReaderLearningStore
 import dev.kotlinds.pokemonclient.PokemonGame
 import dev.kotlinds.pokemonclient.runtime.Recorder
 import dev.kotlinds.pokemonclient.view.StateView
@@ -72,6 +73,8 @@ class AppController(
     private val scope: CoroutineScope,
     /** The profile of the ROM being played: names the game and carries its per-game prompt. */
     val profile: GameProfile = GameCatalog.generic,
+    /** SHA-256 of the ROM: pins what the app learns (a reader's evidence) to one revision of one game. */
+    private val romSha256: String = "",
 ) {
     private val humanButtons = mutableSetOf<Button>()
 
@@ -144,10 +147,15 @@ class AppController(
     val readerValues: StateFlow<Map<String, String>> = _readerValues.asStateFlow()
 
     /**
-     * The learner: a game with no reader teaches the app one while it is played (see [ReaderCalibrator]). It is only
-     * used when the game has no reader at all — a game that ships one, or whose reader the user wrote, is left alone.
+     * The learner: a game with no reader teaches the app one while it is played (see [ReaderCalibrator]). It runs when
+     * the game has no reader at all, **and** keeps running for a reader the app learned itself (a `learned while
+     * playing` one): a later session extends that draft instead of freezing it. A reader somebody wrote (shipped,
+     * calibrated by hand) is left alone.
      */
-    private val calibrator = ReaderCalibrator().takeIf { _reader.value == null }
+    private val calibrator = ReaderCalibrator().takeIf {
+        val reader = _reader.value
+        reader == null || reader.isLearned
+    }
 
     private val _learning = MutableStateFlow<ReaderCalibrator.Progress?>(null)
 
@@ -156,6 +164,9 @@ class AppController(
 
     /** True once the app wrote a reader it learned itself. */
     private var wroteLearnedReader = false
+
+    /** When the learner's evidence was last written (writes are a few seconds apart at most, see [learnReader]). */
+    private var lastLearningWriteMillis = 0L
 
     /**
      * The narration control: the voice saying the decisions, and the lines it really said. It owns the
@@ -225,6 +236,21 @@ class AppController(
 
     init {
         walkthrough.load(WalkthroughCatalog.of(profile, config.dataDirectory))
+        // A session that ended before a reader was ready must not start over: the learner's evidence is picked up where
+        // it stopped (everything from the parts of memory already examined; the part in progress is re-baselined).
+        calibrator?.let { learner ->
+            ReaderLearningStore.of(profile.id, config.dataDirectory)
+                ?.takeIf { it.usable && it.matches(romSha256) }
+                ?.let { evidence ->
+                    learner.restore(evidence)
+                    _learning.value = learner.progress()
+                    emulator.systemLog.add(
+                        "resuming the reader for ${profile.title}: ${evidence.samples} looks, " +
+                            "${evidence.screens.size} screens, part ${evidence.chunk + 1}",
+                    )
+                    println("ai-plays-online: resuming the reader for ${profile.title} (${evidence.samples} looks)")
+                }
+        }
         emulator.musicDuringPauses = _settings.value.musicDuringPausesSettings
         recorder?.let { r ->
             emulator.frameListener = r::onFrame
@@ -517,6 +543,9 @@ class AppController(
         val ram = runCatching { emulator.readMainRam() }.getOrNull() ?: return
         val progress = calibrator.observe(FrameHash.dHash(frame), ram)
         _learning.value = progress
+        // What has been learned so far is written as it goes (a few seconds apart at most, and once more when the
+        // game closes): a session that ends before a reader is ready resumes instead of starting over.
+        saveLearningEvidence(calibrator, force = false)
         if (!progress.ready) return
         val spec = calibrator.draft(profile.id, screenNames()) ?: return
         val file = runCatching { ReaderCatalog.write(spec, config.dataDirectory) }.getOrNull() ?: return
@@ -525,6 +554,27 @@ class AppController(
         _learning.value = null
         emulator.systemLog.add("learned a reader for ${profile.title}: ${spec.observations.size} values → $file")
         println("ai-plays-online: learned a reader for ${profile.title} (${spec.observations.size} values) → $file")
+    }
+
+    /**
+     * Writes what the learner knows so far to `<data>/readers/<id>.learning.json` ([ReaderLearningStore]), at most
+     * every [LEARNING_WRITE_INTERVAL_MILLIS] unless [force]. A write failure is printed and ignored: losing evidence is
+     * not worth failing a game over, and the app simply learns from scratch next time.
+     */
+    private fun saveLearningEvidence(calibrator: ReaderCalibrator, force: Boolean) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastLearningWriteMillis < LEARNING_WRITE_INTERVAL_MILLIS) return
+        lastLearningWriteMillis = now
+        runCatching { ReaderLearningStore.write(calibrator.toEvidence(profile.id, romSha256), config.dataDirectory) }
+            .onFailure { failure -> println("ai-plays-online: could not save the reader evidence: ${failure.message}") }
+    }
+
+    /**
+     * Writes the learner's evidence now (the game is closing): the next session resumes from it. Harmless when the app
+     * is not learning this game (a shipped reader, or nothing to learn).
+     */
+    fun saveLearningOnClose() {
+        calibrator?.let { saveLearningEvidence(it, force = true) }
     }
 
     /** The screen names a walkthrough already knows, so a learned reader names them instead of "screen 3f". */
@@ -612,6 +662,11 @@ class AppController(
     }
 
     private companion object {
+        /**
+         * How often the learner's evidence is written while the game is played. A write is a few tens of KB; a few
+         * seconds apart keeps a crash or a kill from costing more than a handful of looks, without hammering the disk.
+         */
+        const val LEARNING_WRITE_INTERVAL_MILLIS = 5_000L
     }
 }
 /**

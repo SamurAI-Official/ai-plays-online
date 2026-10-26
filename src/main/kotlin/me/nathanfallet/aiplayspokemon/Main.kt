@@ -118,6 +118,9 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
     override fun close() {
         controller.player.value?.pause()
         controller.mcp.value?.stop()
+        // What the reader learner knows so far is written now: the next session resumes from it instead of starting
+        // over (the console below is what closes the core, so this comes first).
+        controller.saveLearningOnClose()
         emulator.close() // unloads the game, which writes the in-game save to disk
     }
 
@@ -129,6 +132,8 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
             netplay: NetplaySettings? = null,
         ): OpenGame {
             val bytes = rom.readBytes()
+            // One hash for the whole open: it pins the netplay handshake and what the reader learner writes down.
+            val romHash = sha256OfRom(bytes)
             // Online play runs both peers' inputs into one console, so it needs a core both can run and,
             // in rollback mode, a deterministic one: prefer the fixed-RTC build (see docs/games.md).
             val spec = if (netplay != null) {
@@ -147,7 +152,7 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
                 rom,
                 config.dataDirectory,
                 netplay = netplay,
-                romSha256 = netplay?.let { sha256OfRom(bytes) },
+                romSha256 = netplay?.let { romHash },
             )
             // What the app knows about this ROM: its own profile, or the generic one (screen only). A game with a
             // calibrated reader (`readers/<id>.json`) is a typed game: the app can read its state (see docs/readers.md).
@@ -164,7 +169,7 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
             if (config.startMuted) emulator.setMuted(true)
             config.startState?.let { slot -> runBlocking { check(emulator.loadState(slot)) { "No save state in slot $slot" } } }
             emulator.start()
-            return OpenGame(AppController(emulator, game, config, scope, profile), emulator)
+            return OpenGame(AppController(emulator, game, config, scope, profile, romHash), emulator)
         }
     }
 }
