@@ -31,6 +31,9 @@ import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import me.nathanfallet.aiplayspokemon.emulator.FrameHash
 import me.nathanfallet.aiplayspokemon.emulator.ReaderCalibrator
 import me.nathanfallet.aiplayspokemon.emulator.ReaderLearningStore
+import me.nathanfallet.aiplayspokemon.emulator.ReaderMerge
+import me.nathanfallet.aiplayspokemon.games.ProgressSignal
+import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
 import dev.kotlinds.pokemonclient.PokemonGame
 import dev.kotlinds.pokemonclient.runtime.Recorder
 import dev.kotlinds.pokemonclient.view.StateView
@@ -162,8 +165,14 @@ class AppController(
     /** How far the app has got learning this game's reader, or null when it is not learning one. */
     val learning: StateFlow<ReaderCalibrator.Progress?> = _learning.asStateFlow()
 
-    /** True once the app wrote a reader it learned itself. */
-    private var wroteLearnedReader = false
+    /** The looks at the game the reader was last written at, so a later session extends it as it learns more. */
+    private var readerWrittenAtSamples = -1
+
+    /**
+     * Which value of the reader's `screen` was being read when a chapter's landmark was seen, and how often in a row:
+     * the evidence behind a `kind: memory` progress signal ([learnedProgress]).
+     */
+    private val landmarkScreens = HashMap<String, Pair<Long, Int>>()
 
     /** When the learner's evidence was last written (writes are a few seconds apart at most, see [learnReader]). */
     private var lastLearningWriteMillis = 0L
@@ -538,7 +547,6 @@ class AppController(
      */
     private suspend fun learnReader() {
         val calibrator = calibrator ?: return
-        if (wroteLearnedReader) return
         val frame = emulator.frames.value ?: return
         val ram = runCatching { emulator.readMainRam() }.getOrNull() ?: return
         val progress = calibrator.observe(FrameHash.dHash(frame), ram)
@@ -547,13 +555,47 @@ class AppController(
         // game closes): a session that ends before a reader is ready resumes instead of starting over.
         saveLearningEvidence(calibrator, force = false)
         if (!progress.ready) return
-        val spec = calibrator.draft(profile.id, screenNames()) ?: return
-        val file = runCatching { ReaderCatalog.write(spec, config.dataDirectory) }.getOrNull() ?: return
-        wroteLearnedReader = true
-        _reader.value = spec
-        _learning.value = null
-        emulator.systemLog.add("learned a reader for ${profile.title}: ${spec.observations.size} values → $file")
-        println("ai-plays-online: learned a reader for ${profile.title} (${spec.observations.size} values) → $file")
+        // The reader is written once, then extended as the learner sees more (not once per look: a write is a file).
+        if (progress.samples - readerWrittenAtSamples < READER_WRITE_EVERY_LOOKS) return
+        val draft = calibrator.draft(profile.id, screenNames()) ?: return
+        // A reader the app learned itself grows: the draft is merged into it, never replacing what it already knows.
+        val merged = ReaderMerge.merge(_reader.value, draft, screenNames(), learnedProgress())
+        val file = runCatching { ReaderCatalog.write(merged, config.dataDirectory) }.getOrNull() ?: return
+        readerWrittenAtSamples = progress.samples
+        _reader.value = merged
+        emulator.systemLog.add(
+            "reader for ${profile.title}: ${merged.observations.size} values, " +
+                "${merged.progress.size} progress signals → $file",
+        )
+        println(
+            "ai-plays-online: reader for ${profile.title} (${merged.observations.size} values, " +
+                "${merged.progress.size} signals) → $file",
+        )
+    }
+
+    /**
+     * The progress signals the app can claim from what it saw: a chapter whose **landmark** was seen while the reader's
+     * `screen` read one value, [MIN_LANDMARK_SIGHTINGS] times in a row. Named `chapter:<id>`, so a walkthrough (or a
+     * user writing one) can refer to it with `kind: memory` — exact, where a picture is a guess. Only a reader the app
+     * learned itself gets these: a reader somebody wrote has its own progress, verified by hand.
+     */
+    private fun learnedProgress(): List<ProgressSignal> {
+        val reader = _reader.value?.takeIf { it.isLearned } ?: return emptyList()
+        val screen = reader.observations.firstOrNull { it.name == "screen" } ?: return emptyList()
+        return landmarkScreens
+            .filterValues { (_, sightings) -> sightings >= MIN_LANDMARK_SIGHTINGS }
+            .map { (chapter, seen) ->
+                ProgressSignal(
+                    name = "chapter:$chapter",
+                    address = screen.address,
+                    type = screen.type,
+                    mask = screen.mask,
+                    shift = screen.shift,
+                    equals = seen.first,
+                    note = "learned while playing: the landmark of chapter '$chapter' was seen ${seen.second} times " +
+                        "in a row while the reader's screen read ${seen.first}",
+                )
+            }
     }
 
     /**
@@ -605,8 +647,23 @@ class AppController(
             return
         }
         if (screenWatcher.check(emulator.frames.value, chapter)) {
+            rememberLandmarkScreen(chapter)
             walkthrough.advance("seen on screen")
         }
+    }
+
+    /**
+     * Remembers which value of the reader's `screen` was read when a chapter's landmark was seen (and how many times in
+     * a row): [learnedProgress] turns a few agreeing sightings into a `kind: memory` progress signal, which is exact
+     * where a picture is a guess. Does nothing without a learned reader, or when the reader has no `screen` value.
+     */
+    private suspend fun rememberLandmarkScreen(chapter: WalkthroughChapter) {
+        val reader = _reader.value?.takeIf { it.isLearned } ?: return
+        val screen = reader.observations.firstOrNull { it.name == "screen" } ?: return
+        val value = runCatching { emulator.observe { memory -> screen.read(memory) } }.getOrNull() ?: return
+        val previous = landmarkScreens[chapter.id]
+        val sightings = if (previous?.first == value) previous.second + 1 else 1
+        landmarkScreens[chapter.id] = value to sightings
     }
 
     /**
@@ -667,6 +724,12 @@ class AppController(
          * seconds apart keeps a crash or a kill from costing more than a handful of looks, without hammering the disk.
          */
         const val LEARNING_WRITE_INTERVAL_MILLIS = 5_000L
+
+        /** Looks between two writes of a learned reader: enough for it to have grown, few enough to follow a run. */
+        const val READER_WRITE_EVERY_LOOKS = 60
+
+        /** Times a chapter's landmark has to be seen on the same `screen` value before it becomes a progress signal. */
+        const val MIN_LANDMARK_SIGHTINGS = 3
     }
 }
 /**

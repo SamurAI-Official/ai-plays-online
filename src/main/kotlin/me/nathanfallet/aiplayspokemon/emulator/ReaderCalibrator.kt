@@ -127,6 +127,9 @@ class ReaderCalibrator(
     /** The signals found in the parts already examined, best per address. */
     private val found = mutableMapOf<Long, Signal>()
 
+    /** Which part of memory each found signal came from: the best of *each* part is kept (see [pruneFound]). */
+    private val foundChunk = mutableMapOf<Long, Int>()
+
     /**
      * The addresses worth believing: their value is checked against the screen on **every** later look, for the whole
      * run. A screen that comes back must give the same value — that is what tells a screen id from a clock, since a
@@ -182,7 +185,10 @@ class ReaderCalibrator(
             .sortedBy { it.key }
             .map { (index, looks) -> ReaderLearning.ScreenEvidence(index, screenPictures.getOrElse(index) { 0L }, looks) },
         found = found.values.map { signal ->
-            ReaderLearning.SignalEvidence(signal.address, signal.byScreen, signal.distinct, signal.looks, signal.consistency)
+            ReaderLearning.SignalEvidence(
+                signal.address, signal.byScreen, signal.distinct, signal.looks, signal.consistency,
+                chunk = foundChunk[signal.address] ?: 0,
+            )
         },
         watched = watched.entries.map { (address, byScreen) -> ReaderLearning.WatchedEvidence(address, byScreen) },
         verified = verified.toMap(),
@@ -210,12 +216,16 @@ class ReaderCalibrator(
         screenPictures.addAll(pictures)
         learning.found.forEach { signal ->
             found[signal.address] = Signal(signal.address, signal.byScreen, signal.distinct, signal.looks, signal.consistency)
+            foundChunk[signal.address] = signal.chunk
         }
         learning.watched.forEach { entry -> watched[entry.address] = entry.byScreen.toMutableMap() }
         verified.putAll(learning.verified)
         revisits.putAll(learning.revisits)
         dropped += learning.dropped
-        refuted += learning.refuted
+        // `refuted` is **not** resumed: a refutation comes from one session's screen clustering, and a screen whose
+        // picture the new session reads slightly differently would refute a good address for good. Every address is
+        // re-checked here anyway (the restored [watched] ones on the first look of each screen), so a counter is
+        // refuted again within a few looks — while a signal that was wrongly refuted gets its chance back.
         resumeChunk = learning.chunk
     }
 
@@ -289,6 +299,10 @@ class ReaderCalibrator(
             watched.remove(it)
             refuted += it
             refuted.boundTo(MAX_FORGOTTEN)
+            // A refuted address is not a signal: it contradicted a screen. Dropping it here keeps [found] (and the
+            // evidence written from it) to what the learner still believes, instead of carrying dead weight.
+            found.remove(it)
+            foundChunk.remove(it)
         }
     }
 
@@ -367,6 +381,7 @@ class ReaderCalibrator(
                     (signal.consistency == previous.consistency && signal.looks > previous.looks)
                 ) {
                     found[signal.address] = signal
+                    foundChunk[signal.address] = chunkStart / chunkSize
                 }
             }
             pruneFound()
@@ -379,21 +394,31 @@ class ReaderCalibrator(
      *
      * A sweep of 4 MiB folds **every** address whose value moved with a screen — hundreds of thousands of them, and the
      * evidence file then weighed 222 MB in a real run (Phantasy Star 0, 71 screens). Only the best handful are ever
-     * read: [candidates] reports the top [MAX_CANDIDATES], so keeping [MAX_FOUND] (twice that, so a signal still has
-     * room to improve before it is judged) loses nothing that could have been reported, and keeps both the memory and
-     * the file bounded.
+     * read, but *which* handful matters: the screen id of a game lives in one part of memory, so the learner keeps the
+     * best [MAX_FOUND_PER_CHUNK] signals of **each** part it examined, up to [MAX_FOUND] in all. A global top-N would
+     * instead fill up with the addresses that happen to separate the most screens once (a part examined near the end of
+     * a session) and drop the checked ones a resumed session depends on.
      */
     private fun pruneFound() {
         if (found.size <= MAX_FOUND) return
         val keep = found.values
+            .groupBy { foundChunk[it.address] ?: 0 }
+            .values
+            .flatMap { signals ->
+                signals.sortedWith(compareByDescending<Signal> { it.consistency }.thenByDescending { it.distinct })
+                    .take(MAX_FOUND_PER_CHUNK)
+            }
             .sortedWith(
-                compareByDescending<Signal> { it.consistency }
-                    .thenByDescending { it.distinct }
-                    .thenByDescending { it.looks },
+                // The signals that have been **checked** first: what a resumed session must not lose.
+                compareByDescending<Signal> { verified[it.address] ?: 0 }
+                    .thenByDescending { revisits[it.address] ?: 0 }
+                    .thenByDescending { it.consistency }
+                    .thenByDescending { it.distinct },
             )
             .take(MAX_FOUND)
         found.clear()
         keep.forEach { signal -> found[signal.address] = signal }
+        foundChunk.keys.retainAll(found.keys)
     }
 
     /**
@@ -463,10 +488,26 @@ class ReaderCalibrator(
     /**
      * The signals that have been **checked since they were found** and never once contradicted a screen, and that were
      * seen again on a screen that came back ([Signal.revisits]) — the evidence that tells a screen id from a clock.
+     *
+     * The filter runs **before** the ranking, over every candidate, not over [candidates]' top handful: a run can end
+     * with dozens of unverified addresses that separate more screens than the verified ones (a part of memory examined
+     * near the end of a session), and asking the top of *those* would come back empty even though the run did prove a
+     * signal. A resumed session hits this as soon as it reaches parts a first session never examined.
      */
-    fun proven(): List<Signal> = candidates().filter {
-        it.distinct >= minDistinct && it.verified >= minVerified && it.revisits >= minRevisits
-    }
+    fun proven(): List<Signal> = (found.values + signals(tallies, minConsistency = 0.0))
+        .filter { it.address !in refuted }
+        .distinctBy { it.address }
+        .map { it.copy(verified = verified[it.address] ?: 0, revisits = revisits[it.address] ?: 0) }
+        .filter {
+            it.consistency >= minConsistency && it.distinct >= minDistinct &&
+                it.verified >= minVerified && it.revisits >= minRevisits
+        }
+        .sortedWith(
+            compareByDescending<Signal> { it.consistency }
+                .thenByDescending { it.distinct }
+                .thenByDescending { it.revisits },
+        )
+        .take(MAX_CANDIDATES)
 
     /**
      * A draft reader for [id], or null when there is nothing worth writing yet. [names] names a screen **picture**
@@ -538,11 +579,15 @@ class ReaderCalibrator(
         const val MAX_CANDIDATES = 32
 
         /**
-         * Signals the learner remembers across the whole sweep (twice [MAX_CANDIDATES], so a signal still has room to
-         * improve before the top of the list is decided). Without this the evidence file reaches hundreds of megabytes:
-         * a real 71-screen run folded 705,824 addresses, of which 32 are ever reported.
+         * Signals the learner remembers across the whole sweep. Without a cap the evidence file reached hundreds of
+         * megabytes: a real 71-screen run folded 705,824 addresses, of which 32 are ever reported. The cap is per part
+         * of memory ([MAX_FOUND_PER_CHUNK]) and then overall, so a part's own screen id is not pushed out by another
+         * part's noisier addresses.
          */
-        const val MAX_FOUND = 64
+        const val MAX_FOUND = 256
+
+        /** Best signals kept per part of memory examined (the app's default sweep has 32 parts of 128 KiB). */
+        const val MAX_FOUND_PER_CHUNK = 8
 
         /** Addresses kept in the "do not look at this again" sets ([dropped], [refuted]): an optimization, not a record. */
         const val MAX_FORGOTTEN = 4096

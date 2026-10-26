@@ -45,6 +45,11 @@ data class ReaderLearning(
     val revisits: Map<Long, Int> = emptyMap(),
     /** Addresses that proved volatile (many values on one screen) or contradicted a screen: not worth looking at again. */
     val dropped: List<Long> = emptyList(),
+    /**
+     * Addresses this session refuted (they contradicted a screen). Written for diagnostics only: [ReaderCalibrator]
+     * does **not** resume it, because a refutation comes from one session's screen clustering, and carrying it over
+     * would let a screen read slightly differently refute a good address for good.
+     */
     val refuted: List<Long> = emptyList(),
 ) {
 
@@ -60,6 +65,8 @@ data class ReaderLearning(
         val distinct: Int,
         val looks: Int,
         val consistency: Double,
+        /** The part of memory it was found in, so the best of *each* part is kept when the evidence is resumed. */
+        val chunk: Int = 0,
     )
 
     /** One address being checked against every later look. */

@@ -9,6 +9,7 @@ import me.nathanfallet.aiplayspokemon.emulator.FrameHash
 import me.nathanfallet.aiplayspokemon.emulator.RamProbe
 import me.nathanfallet.aiplayspokemon.emulator.ReaderCalibrator
 import me.nathanfallet.aiplayspokemon.emulator.ReaderLearningStore
+import me.nathanfallet.aiplayspokemon.emulator.ReaderMerge
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
@@ -107,6 +108,12 @@ fun main(args: Array<String>) {
         console.close()
     }
 
+    if (resume) {
+        // Written back before anything else so the next run resumes from here, whatever this run learned (the app
+        // does the same: the evidence is saved as it goes, the reader only once there is one).
+        val file = ReaderLearningStore.write(calibrator.toEvidence(profile.id, romHash), config.dataDirectory)
+        println("wrote $file (${progress.samples} looks, ${progress.screens} screens, part ${progress.chunk + 1})")
+    }
     println("looks: ${progress.samples}, screens: ${progress.screens}, addresses kept: ${progress.candidates}")
     if (samplesBefore > 0) println("this run added ${progress.samples - samplesBefore} looks to the $samplesBefore resumed")
 
@@ -141,15 +148,16 @@ fun main(args: Array<String>) {
         println("- ${observation.name} at ${RamProbe.address(observation.address)}: ${observation.values}")
     }
     if (write) {
-        val file = ReaderCatalog.write(draft, config.dataDirectory)
-        println("wrote $file")
+        // --merge: extend the reader the app already has (the same path AppController takes), instead of replacing it.
+        val merged = if (args.any { it == "--merge" }) {
+            ReaderMerge.merge(ReaderCatalog.of(profile.id, config.dataDirectory), draft, names)
+        } else {
+            draft
+        }
+        val file = ReaderCatalog.write(merged, config.dataDirectory)
+        println("wrote $file (${merged.observations.size} values, ${merged.progress.size} progress signals)")
     } else {
         println("(dry run: add --write to save it to ${config.dataDirectory.resolve("readers")})")
-    }
-    if (resume) {
-        // Written back so the next run resumes from here (the app does the same, a few seconds apart).
-        val file = ReaderLearningStore.write(calibrator.toEvidence(profile.id, romHash), config.dataDirectory)
-        println("wrote $file (${progress.samples} looks, ${progress.screens} screens, part ${progress.chunk + 1})")
     }
 }
 
