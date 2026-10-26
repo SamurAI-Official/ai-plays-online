@@ -434,7 +434,9 @@ Central; a `-SNAPSHOT` from `mavenLocal()` while developing):
   deciders: our loop (`PokemonPlayer` with Jev, LLMs through Koog, or `claude -p`) or an external agent through MCP.
 
 Tests: `./gradlew test`; the library's own tests (and the ROM tests) live in its repository. Coverage with
-`./gradlew koverHtmlReport`.
+`./gradlew koverHtmlReport`. The two-console netplay test is gated like the other ROM tests:
+`POKEMON_ROM=... NETPLAY_TEST_ROLLBACK_CORE=... ./gradlew test --tests '*NetplaySessionTest*'` (the core is
+copied per peer, so leave `POKEMON_MELONDS_ROLLBACK_CORE` unset).
 
 ### Pure, assisted, hybrid: why several modes?
 
