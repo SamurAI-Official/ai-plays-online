@@ -45,13 +45,16 @@ class LlmDecisionModel(
 
     override val name = "${provider.label} · $modelId${if (thinking) " (thinking)" else ""}"
 
-    private val executor: PromptExecutor = provider.executor(apiKey)
-    private val model = provider.model(modelId)
-
     /** Custom client for OpenAI-compatible endpoints (e.g. LM Studio). Null = use Koog's client. */
     private val compatibleClient: OpenAiCompatibleClient? = baseUrl?.let {
         OpenAiCompatibleClient.create(it, apiKey ?: "")
     }
+
+    private val model = provider.model(modelId)
+
+    // Only needed for providers that go through Koog (no custom OpenAI-compatible endpoint). For a local
+    // OpenAI-compatible server (e.g. LM Studio) with no API key, skip it so we don't trip requireNotNull.
+    private val executor: PromptExecutor? = if (compatibleClient == null) provider.executor(apiKey) else null
 
     override suspend fun choose(request: ChoiceRequest): ChoiceResult {
         val state = "State:\n${json.encodeToString(JsonObject.serializer(), request.state)}"
@@ -106,7 +109,7 @@ class LlmDecisionModel(
                     result.text
                 } else {
                     val response = try {
-                        executor.execute(decisionPrompt, model)
+                        executor!!.execute(decisionPrompt, model)
                     } catch (error: Exception) {
                         throw classify(error)
                     }

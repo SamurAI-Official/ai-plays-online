@@ -454,7 +454,7 @@ class AppController(
             val apiKey = config.llmApiKey(provider)
             when {
                 provider == LlmProvider.CLAUDE_CODE -> ClaudeCodeDecisionModel(model, effort = if (thinking) "high" else "low")
-                provider.needsApiKey && apiKey == null -> null
+                provider.needsApiKey && apiKey == null && !(provider == LlmProvider.OPENAI && config.openAiBaseUrl != null) -> null
                 // Both OpenAI-compatible endpoints (LM Studio, and Ollama's own /v1 API) go through our client:
                 // one request timeout (300 s — a cold model load is not an error) and the same error handling.
                 else -> LlmDecisionModel(
