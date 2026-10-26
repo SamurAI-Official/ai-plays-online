@@ -114,6 +114,80 @@ class ReaderCatalogTest {
         assertNotNull(ReaderCatalog.apply(GameCatalog.generic, dataDirectory), "still a profile")
     }
 
+    /** A list of values (a party, a menu, a bag): one entry per [Observation.length], from [Observation.index]. */
+    @Test
+    fun arraysAreReadAsAList() {
+        val ram = memory(0x700 to byteArrayOf(4, 5, 6, 0))
+        val party = Observation("party", addressOf(0x700), ValueType.U8_ARRAY, length = 3)
+        assertEquals(listOf(4L, 5L, 6L), party.list(ram))
+        assertEquals("4, 5, 6", party.format(ram))
+
+        // From an index, and as halfwords.
+        val fromSecond = Observation("party", addressOf(0x700), ValueType.U8_ARRAY, length = 2, index = 1)
+        assertEquals("5, 6", fromSecond.format(ram))
+        assertEquals("1284", Observation("pair", addressOf(0x700), ValueType.U16_ARRAY, length = 1).format(ram))
+    }
+
+    /** Two addresses read as one value: a position, a cursor. */
+    @Test
+    fun pairsAndExpressionsReadTwoAddresses() {
+        val ram = memory(
+            0x710 to byteArrayOf(0x10, 0x00, 0x20, 0x00), // x = 16 (s16), y = 32 (s16)
+            0x720 to byteArrayOf(0x34, 0x12, 0x02, 0x00), // low = 0x1234, high = 2
+        )
+        val position = Observation("position", addressOf(0x710), ValueType.PAIR, address2 = addressOf(0x712), type2 = ValueType.S16)
+        assertEquals("(16, 32)", position.format(ram))
+
+        // A 16-bit value composed of a byte and another byte × 256.
+        val composed = Observation(
+            "gold", addressOf(0x720), ValueType.EXPR,
+            address2 = addressOf(0x722), type1 = ValueType.U16, type2 = ValueType.U8, op = ValueOp.ADD, factor = 256.0,
+        )
+        assertEquals((0x1234 + 2 * 256).toString(), composed.format(ram))
+        assertEquals((0x1234 + 512).toLong(), composed.read(ram))
+    }
+
+    /** A pointer is only followed when it lands in main RAM. */
+    @Test
+    fun pointersAreFollowedOnlyInsideMainRam() {
+        val inside = memory(
+            0x730 to byteArrayOf(0x40, 0x07, 0x00, 0x02), // 0x02000740
+            0x740 to byteArrayOf(0x2A),
+        )
+        val pointer = Observation("held", addressOf(0x730), ValueType.POINTER, type2 = ValueType.U8)
+        assertEquals("42", pointer.format(inside))
+
+        val outside = memory(0x730 to byteArrayOf(0x00, 0x00, 0x00, 0x00)) // null: not in main RAM
+        assertEquals("out of range", Observation("held", addressOf(0x730), ValueType.POINTER).format(outside))
+    }
+
+    /** A value that is only meaningful while another one holds: a menu cursor on the field is not a value. */
+    @Test
+    fun aGuardedValueSaysWhenItDoesNotApply() {
+        val field = memory(0x750 to byteArrayOf(0x00, 0x03))
+        val cursor = Observation("cursor", addressOf(0x751), ValueType.U8, guardAddress = addressOf(0x750), guardEquals = 1)
+        assertEquals("not now", cursor.format(field))
+        assertTrue(!cursor.applies(field))
+
+        // The guard holds (the menu is up): the value is read.
+        val menu = memory(0x750 to byteArrayOf(0x01, 0x03))
+        assertEquals("3", cursor.format(menu))
+        assertTrue(cursor.applies(menu))
+    }
+
+    /** Named bits: a byte of flags is worth more than a number when the names are known. */
+    @Test
+    fun namedBitsAreShownByTheirNames() {
+        val ram = memory(0x760 to byteArrayOf(0b0000_1001, 0x00, 0x00, 0x00))
+        val flags = Observation(
+            "status", addressOf(0x760), ValueType.BITS, mask = 0xFF, shift = 0,
+            bitNames = mapOf("0" to "paused", "3" to "in battle", "5" to "poisoned"),
+        )
+        assertEquals("paused, in battle", flags.format(ram))
+        // Nothing set, and no names: the number is what is left.
+        assertEquals("0", Observation("status", addressOf(0x761), ValueType.BITS, mask = 0xFF).format(ram))
+    }
+
     /**
      * The learner's evidence sits next to the readers it produces (`<id>.learning.json`): it must never be read as a
      * reader, or a game would become "typed" from an unfinished calibration.

@@ -2,6 +2,8 @@ package me.nathanfallet.aiplayspokemon.emulator
 
 import dev.kotlinds.pokemonclient.Memory
 import dev.kotlinds.pokemonclient.RamMemory
+import me.nathanfallet.aiplayspokemon.games.READER_RAM_END
+import me.nathanfallet.aiplayspokemon.games.READER_RAM_START
 import me.nathanfallet.aiplayspokemon.games.ValueType
 
 /**
@@ -18,10 +20,10 @@ import me.nathanfallet.aiplayspokemon.games.ValueType
 object RamProbe {
 
     /** Main RAM's first address: what [Memory] takes, and what a `readers/<id>.json` stores. */
-    const val MAIN_RAM_START = 0x02000000L
+    const val MAIN_RAM_START = READER_RAM_START
 
     /** The last address of main RAM (4 MB; the DS mirrors it above this, so there is nothing more to find). */
-    const val MAIN_RAM_END = 0x023FFFFFL
+    const val MAIN_RAM_END = READER_RAM_END
 
     /** A snapshot of [ram] (the bytes the emulator returned) as the [Memory] the readers read. */
     fun snapshot(ram: ByteArray): Memory = RamMemory(ram)
@@ -40,6 +42,11 @@ object RamProbe {
         ValueType.BOOL -> if (memory.read8(address) != 0) 1L else 0L
         ValueType.BITS -> memory.read32(address)
         ValueType.ASCII -> 0L
+        // The composite types need the rest of an [Observation] (its length, op, second address): a plain (address, type)
+        // read has nothing to combine, so it reads what it can and lets the reader do the rest.
+        ValueType.U8_ARRAY, ValueType.U16_ARRAY, ValueType.EXPR -> 0L
+        ValueType.PAIR -> memory.read16(address).toShort().toLong()
+        ValueType.POINTER -> memory.read32(address)
     }
 
     /**
@@ -86,9 +93,9 @@ object RamProbe {
 
     /** Bytes a [type] occupies (what the address step and the alignment follow). */
     fun step(type: ValueType): Int = when (type) {
-        ValueType.U8, ValueType.S8, ValueType.BOOL, ValueType.BITS, ValueType.ASCII -> 1
-        ValueType.U16, ValueType.S16 -> 2
-        ValueType.U32, ValueType.S32 -> 4
+        ValueType.U8, ValueType.S8, ValueType.BOOL, ValueType.BITS, ValueType.ASCII, ValueType.U8_ARRAY -> 1
+        ValueType.U16, ValueType.S16, ValueType.U16_ARRAY, ValueType.PAIR -> 2
+        ValueType.U32, ValueType.S32, ValueType.EXPR, ValueType.POINTER -> 4
     }
 
     /** `0x02000000` form, the one `readers/<id>.json` and every other tool uses. */

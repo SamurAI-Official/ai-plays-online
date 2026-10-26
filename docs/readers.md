@@ -52,6 +52,31 @@ panel, and a walkthrough chapter whose milestone is `kind: memory` is verified f
   reader is a claim about someone else's program, and these are how a later reader checks the claim.
 - **`progress`** entries are named signals a walkthrough's `kind: memory` milestone refers to by `signal`.
 
+### Values made of more than one address
+
+A game rarely keeps what matters in one byte. These types read the shapes that showed up in practice, without letting
+a reader compute anything it likes (every one is bounded, and a wrong address is visible as a wrong value):
+
+| `type` | What it reads |
+|---|---|
+| `u8_array`, `u16_array` | `length` entries starting at `address + index * step`: a party, a menu, a bag. Shown as a list. |
+| `pair` | `address` and `address2`, both as `type2`: a position, a cursor, `(x, y)`. |
+| `expr` | `address` (as `type1`) combined with `address2` (as `type2`) by `op` (`add`, `sub`, `mul`, `div`, `shl`, `shr`, `and`, `or`), the second multiplied by `factor` first: a 16-bit value split over two bytes, an offset from a base. |
+| `pointer` | the `u32` at `address`, then `type2` at `target + offset` — **only** when the target lands in main RAM, otherwise `out of range`. |
+| `bits` + `bitNames` | a byte of flags shown by name (`{"0": "paused", "3": "in battle"}`) instead of as a number. |
+| any type + `guardAddress`/`guardEquals` | the value is only read while another address holds a value; otherwise it reads `not now` (a menu cursor on the field is not a value). |
+
+```json
+{
+  "name": "position",
+  "address": 34670141,
+  "type": "pair",
+  "address2": 34670143,
+  "type2": "s16",
+  "note": "x and y of the player, in tiles: checked against the screen over a 3000-frame run"
+}
+```
+
 ## Calibrating one
 
 ```bash
@@ -107,6 +132,23 @@ How it decides, and why it is not guesswork:
   clock — a counter that happens to move once per screen looks perfect until a screen comes back.
 - **It refuses to write junk.** A reader is only written when a signal separates at least 3 screens, has survived 8+
   looks of checking, and was seen again on a screen that came back. Until then the panel says what it is still missing.
+- **What it learned is not lost when the game closes.** The evidence — the screens seen, the signals found, how often
+  each was checked, and the part of memory the sweep had reached — is written to
+  `<data>/readers/<id>.learning.json` as it goes (every few seconds, and once more on close). The next session resumes
+  there instead of starting at the first byte of memory: the part that was being examined is re-baselined (its tallies
+  belonged to a RAM baseline that is gone), everything before it is kept. `romSha256` in the file pins the evidence to
+  one ROM, so another revision's is discarded rather than mixed. `refuted` is *not* resumed on purpose: a refutation
+  comes from one session's screen clustering, and carrying it over could kill a good address for good.
+- **A reader it learned itself keeps growing.** The learner used to stop as soon as a reader existed, so a first draft
+  was frozen — one value, for ever. Now a later session's draft is **merged** into a `learned while playing` reader
+  (`emulator/ReaderMerge`): one entry per address, the names already given win, the values of screens the earlier
+  sessions never saw are added (up to 8 values), duplicate names are made unique (`screen_2`), and a chapter whose
+  landmark was seen while the reader's `screen` read one value becomes a `chapter:<id>` progress signal after three
+  agreeing sightings. A reader somebody wrote (shipped, calibrated by hand, imported) is never touched.
+- **The file stays small.** A 4 MiB sweep folds hundreds of thousands of addresses (a real 71-screen run folded
+  705,824 and wrote a 222 MB file before this was bounded). The learner keeps the best 8 signals of *each* part it
+  examined, up to 256 in all, so the evidence is tens of KB and the screen id of a part is never pushed out by another
+  part's noisier addresses.
 
 The proof, on two games nobody calibrated for the learner (both with a route of blind button presses):
 
@@ -139,7 +181,8 @@ from them would have been worse than useless: it would have told the AI it was o
   walkthrough landmark already knows that picture ("Boot to the front end" below is that). Rename them when you know.
 - **A game whose screens never repeat cannot be verified.** If every screen is visited once, a screen id and a clock are
   indistinguishable, so nothing is written. Going back to a menu is what makes it learnable.
-- **It only learns for a game that has no reader.** A shipped or hand-written reader (and the user's own file) wins.
+- **It only learns for a game that has no reader, or for one it learned itself.** A shipped or hand-written reader (and
+  the user's own file) wins, and is never extended; a `learned while playing` reader is the app's own and keeps growing.
 - **Review it before trusting it.** `provenance: "learned while playing"` and the note on each value say how it was
   found: what it saw, how often it agreed, and how many looks of checking it survived.
 
@@ -152,10 +195,22 @@ from them would have been worse than useless: it would have told the AI it was o
 
 # Options: |frames|core, --write, --route=A@900-908;DOWN@1400-1408 (drive a different route),
 #          --chunk=<bytes> and --looks=<n> (how much of memory is examined at a time, and for how long)
+#          --resume (pick up <data>/readers/<id>.learning.json and write it back: what a second session does)
+#          --merge  (with --write: extend the reader the app already has, instead of replacing it)
 
 # A game that already has a reader is the learner's ground truth: the probe says whether it found those addresses again:
 #   -- the reader this game already has (a hand calibration, for comparison):
 #      screen at 0x023867c6: not found in this run
+```
+
+A run that resumes is visibly different from one that starts over — the numbers continue instead of restarting:
+
+```
+resumed: 160 looks, 24 screens, part 2, 10 signals found before
+looks: 320, screens: 24, addresses kept: 15
+this run added 160 looks to the 160 resumed
+ready: true, best signal separates 6 screens and agrees 100% of the time
+wrote .../readers/final-fantasy-iii.json (8 values, 0 progress signals)
 ```
 
 In the app it happens by itself: open a game with no reader, play it (or let the AI play), and watch the **Reader**
