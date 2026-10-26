@@ -20,6 +20,8 @@ import kotlinx.coroutines.runBlocking
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import dev.kotlinds.pokemonclient.PokemonGames
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
+import me.nathanfallet.aiplayspokemon.games.OnlineWalkthroughSource
+import me.nathanfallet.aiplayspokemon.games.WalkthroughCatalog
 import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
 import me.nathanfallet.aiplayspokemon.ui.App
 import me.nathanfallet.aiplayspokemon.ui.AppController
@@ -29,6 +31,7 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.net.URI
 import java.nio.file.Path
 
 /**
@@ -124,6 +127,13 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
             // What the app knows about this ROM: its own profile, or the generic one (screen only). A game with a
             // calibrated reader (`readers/<id>.json`) is a typed game: the app can read its state (see docs/readers.md).
             val profile = ReaderCatalog.apply(GameCatalog.detect(bytes, config.dataDirectory), config.dataDirectory)
+            // Screen viewer + reader are already active for every ROM. Once the game title is verified, try to
+            // generate (and cache) a walkthrough from the online source so screen-only games get guidance too.
+            if (GameCatalog.verifyTitle(profile)) {
+                val source = config.walkthroughUrl?.takeIf { it.isNotBlank() }?.let { OnlineWalkthroughSource(URI.create(it)) }
+                    ?: OnlineWalkthroughSource()
+                WalkthroughCatalog.generate(profile, config.dataDirectory, source)
+            }
             val game = PokemonGames.detect(bytes)
             println("ai-plays-online: ${profile.title} (${profile.agent}) on ${emulator.info.name}")
             if (config.startMuted) emulator.setMuted(true)

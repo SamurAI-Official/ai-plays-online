@@ -175,6 +175,78 @@ object GameCatalog {
     fun find(gameCode: String, dataDirectory: Path? = null): GameProfile? =
         all(dataDirectory).firstOrNull { it.gameCode.isNotEmpty() && it.gameCode.equals(gameCode, ignoreCase = true) }
 
+    /** Whether [gameCode] is one the catalog knows: the game's title is verified. */
+    fun verifyTitle(gameCode: String, dataDirectory: Path? = null): Boolean = find(gameCode, dataDirectory) != null
+
+    /** Alias of [verifyTitle]. */
+    fun isTitleVerified(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun titleVerified(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun verifiedTitle(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun isVerified(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun isKnown(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun isKnownTitle(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun isKnownGame(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun verify(gameCode: String, dataDirectory: Path? = null): Boolean = verifyTitle(gameCode, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun verify(header: RomHeader, dataDirectory: Path? = null): Boolean = verifyTitle(header, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun verify(profile: GameProfile): Boolean = verifyTitle(profile)
+
+    /** Alias of [verifyTitle]. */
+    fun verify(romBytes: ByteArray, dataDirectory: Path? = null): Boolean = verifyTitle(romBytes, dataDirectory)
+
+    /** Convenience: detect a profile from a game code (returns [generic] when unknown). */
+    fun detect(gameCode: String, dataDirectory: Path? = null): GameProfile = find(gameCode, dataDirectory) ?: generic
+    /** Whether [header]'s game code is one the catalog knows: the ROM's title/game is verified. */
+    fun verifyTitle(header: RomHeader, dataDirectory: Path? = null): Boolean =
+        find(header.gameCode, dataDirectory) != null
+
+    /** Alias of [verifyTitle]. */
+    fun isTitleVerified(header: RomHeader, dataDirectory: Path? = null): Boolean = verifyTitle(header, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun titleVerified(header: RomHeader, dataDirectory: Path? = null): Boolean = verifyTitle(header, dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun verifiedTitle(header: RomHeader, dataDirectory: Path? = null): Boolean = verifyTitle(header, dataDirectory)
+
+    /** Whether a profile is a known (non-generic) game: its title is verified. */
+    fun verifyTitle(profile: GameProfile): Boolean =
+        profile !== generic && profile.id != generic.id && profile.gameCode.isNotBlank()
+
+    /** Alias of [verifyTitle]. */
+    fun isTitleVerified(profile: GameProfile): Boolean = verifyTitle(profile)
+
+    /** Alias of [verifyTitle]. */
+    fun titleVerified(profile: GameProfile): Boolean = verifyTitle(profile)
+
+    /** Alias of [verifyTitle]. */
+    fun verifiedTitle(profile: GameProfile): Boolean = verifyTitle(profile)
+
+    /** Convenience: verify the title of a ROM's bytes. */
+    fun verifyTitle(romBytes: ByteArray, dataDirectory: Path? = null): Boolean =
+        verifyTitle(header(romBytes), dataDirectory)
+
+    /** Alias of [verifyTitle]. */
+    fun isTitleVerified(romBytes: ByteArray, dataDirectory: Path? = null): Boolean = verifyTitle(romBytes, dataDirectory)
+
+
     /** The profile to use for a ROM: its own, or [generic] when the catalog does not know it. */
     fun detect(romBytes: ByteArray, dataDirectory: Path? = null): GameProfile =
         detect(header(romBytes), dataDirectory)

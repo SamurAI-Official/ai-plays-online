@@ -146,6 +146,12 @@ class AppConfig(
     val romsDirectory: Path
         get() = setting("AI_PLAYS_ONLINE_ROMS_DIR", "roms.dir")?.let(Path::of) ?: dataDirectory.resolve("roms")
 
+    /**
+     * Base URL for online walkthroughs (optional). Defaults to the built-in endpoint when unset.
+     */
+    val walkthroughUrl: String?
+        get() = setting("AI_PLAYS_ONLINE_WALKTHROUGH_URL", "walkthrough.url")
+
     private val LlmProvider.key get() = name.lowercase()
 
     private fun setting(variable: String?, key: String): String? =

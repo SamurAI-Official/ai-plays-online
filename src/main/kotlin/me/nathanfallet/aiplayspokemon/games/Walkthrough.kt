@@ -47,6 +47,8 @@ data class Walkthrough(
         const val PROVENANCE_HAND_WRITTEN = "hand-written"
         const val PROVENANCE_COMMUNITY = "community"
         const val PROVENANCE_IMPORTED = "imported"
+        const val PROVENANCE_ONLINE = "online"
+        const val PROVENANCE_GENERATED = "generated"
     }
 }
 

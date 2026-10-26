@@ -234,6 +234,13 @@ class AppController(
             emulator.stateLoadedListener = r::saveLoaded
         }
         createPlayer()
+        scope.launch {
+            var first = true
+            _reader.collect {
+                if (first) { first = false; return@collect }
+                createPlayer()
+            }
+        }
         updateMcpServer()
         scope.launch { refreshPanel() }
         refreshOllamaModels()
@@ -401,7 +408,9 @@ class AppController(
         _player.value?.pause()
         val game = game
         val model = createModel(_backend.value, emulator)
-        val reader = reader.value
+        // Screen-only games have no calibrated reader yet, but the AI can still play them through the screen
+        // viewer (and a reader is learned while it plays): give them an empty reader so ReaderPlayer runs.
+        val reader = _reader.value ?: ReaderSpec(id = profile.id, provenance = "screen")
         _player.value = when {
             game != null && model != null -> {
                 // In hybrid mode, the LLM settings define the planner (it may be the same as the decider).
@@ -418,7 +427,7 @@ class AppController(
             }
             // A game with a reader (shipped, calibrated by hand, or learned by the app while playing): the same loop,
             // its state is what the reader reads and its actions are the console's own (see docs/readers.md).
-            reader != null && model != null -> ReaderPlayer(
+            model != null -> ReaderPlayer(
                 emulator = emulator,
                 reader = reader,
                 profile = profile,

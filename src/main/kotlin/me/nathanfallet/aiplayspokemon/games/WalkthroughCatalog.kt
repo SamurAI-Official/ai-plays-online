@@ -60,11 +60,94 @@ object WalkthroughCatalog {
         return file
     }
 
-    /** Where the text of [walkthrough] came from, as a sentence for the UI. */
+    /**
+     * Generates (and caches) a walkthrough for [profile] from an online source, when none is already available.
+     * Returns the cached/generated walkthrough, or null when the source has nothing (or the network fails).
+     */
+    fun generate(profile: GameProfile, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(profile.walkthroughId ?: profile.id, profile.title, dataDirectory, source)
+
+    /** Generates (and caches) a walkthrough with [id] from an online source. */
+    fun generate(id: String, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(id, id, dataDirectory, source)
+
+    /** Generates (and caches) a walkthrough with [id]/[title] from an online source. */
+    fun generate(id: String, title: String, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? {
+        // A user's or shipped walkthrough always wins; never overwrite it.
+        of(id, dataDirectory)?.let { return it }
+        val walkthrough = safeFetch(source, id, title) ?: return null
+        if (walkthrough.chapters.isEmpty()) return null
+        val cached = walkthrough.copy(id = id)
+        if (dataDirectory != null) {
+            runCatching {
+                val directory = dataDirectory.resolve(USER_DIRECTORY)
+                Files.createDirectories(directory)
+                Files.writeString(directory.resolve("$id.json"), GamesFile.json.encodeToString(cached))
+            }
+        }
+        return cached
+    }
+
+    /** Never throws: fetch failures become null. */
+    private fun safeFetch(source: WalkthroughSource, id: String, title: String): Walkthrough? =
+        runCatching { source.fetch(id, title) }.getOrNull()
+
+    /** Generates (and caches) a walkthrough for [profile] from [source]. */
+    fun generate(profile: GameProfile, source: WalkthroughSource): Walkthrough? =
+        generate(profile, null, source)
+
+
+    /** Generates (and caches) a walkthrough with [id] from [source]. */
+    fun generate(id: String, source: WalkthroughSource): Walkthrough? =
+        generate(id, null, source)
+
+
+    /** Generates (and caches) a walkthrough with [id]/[title] from [source]. */
+    fun generate(id: String, title: String, source: WalkthroughSource): Walkthrough? =
+        generate(id, title, null, source)
+
+
+    /** Alias of [generate]. */
+    fun fromOnline(id: String, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(id, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun fetch(profile: GameProfile, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(profile, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun fetch(id: String, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(id, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun online(profile: GameProfile, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(profile, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun online(id: String, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(id, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun generateFromOnline(profile: GameProfile, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(profile, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun generateFromOnline(id: String, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(id, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun generateWalkthrough(profile: GameProfile, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(profile, dataDirectory, source)
+
+    /** Alias of [generate]. */
+    fun generateWalkthrough(id: String, dataDirectory: Path? = null, source: WalkthroughSource = OnlineWalkthroughSource()): Walkthrough? =
+        generate(id, dataDirectory, source)
     fun provenanceNote(walkthrough: Walkthrough): String = when (walkthrough.provenance) {
         Walkthrough.PROVENANCE_HAND_WRITTEN -> "written for this project"
         Walkthrough.PROVENANCE_COMMUNITY -> "contributed by the community"
         Walkthrough.PROVENANCE_IMPORTED -> "imported by you (not checked by us)"
+        Walkthrough.PROVENANCE_ONLINE -> "fetched from an online source"
+        Walkthrough.PROVENANCE_GENERATED -> "generated from an online source"
         else -> walkthrough.provenance
     }
 }
