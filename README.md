@@ -168,6 +168,18 @@ blind button presses) it wrote a 4-value reader and the picker then offered it a
 clocks that moved once per screen — because a screen came back with a different value. What it finds is a draft to
 review: the values are the game's own, the names are placeholders.
 
+**A reader is checked while it is used, and says how it is doing.** `emulator/ReaderVerifier` applies the same rule to
+the reader the app is playing through as the learner applies to a new one: every value that claims to name screens has
+to read **one value per screen** and tell at least two screens apart. A value that moves on its own within a screen is
+`inconsistent` (the agent would be told it is on a screen it has left), one that never changes is `constant`, one that
+is never readable (a guard that never holds, a pointer out of range) is `unreadable`; counters and text are reported for
+what they do instead of being judged. The verdicts are shown in the panel, and a value caught moving within a screen is
+downgraded in the reader's `confidence` while one the check could not exercise is left alone — it cannot refute what it
+never saw, so it reports it in the notes instead. Only a reader that is the app's own or one in your `<data>/readers` is
+written at all: a reader that ships with the app is never shadowed by a user copy. AoE's hand-calibrated reader, checked
+over a 4,000-frame run: `2 of 2 screen values hold (267 looks, 50 screens)`, `screen at 0x023867c6: 49/50 screens held,
+agreement 0.99`. `dev/ReaderVerifyProbe` does the same for any ROM.
+
 **The reader also plays the game.** `ReaderPlayer` is the same observe → decide → act loop as the Pokémon player, with
 the reader's values as its state and the console's own actions (press, hold, tap, wait) — so a game nobody wrote code
 for gets an AI that can see *and* act. Verified headlessly on AoE with a scripted policy that reads nothing but the

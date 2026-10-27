@@ -1,6 +1,5 @@
 package me.nathanfallet.aiplayspokemon.dev
 
-import dev.kotlinds.pokemonclient.console.MemoryRegion
 import dev.kotlinds.pokemonclient.libretro.LibretroConsole
 import dev.kotlinds.pokemonclient.libretro.LibretroCoreSpec
 import me.nathanfallet.aiplayspokemon.config.AppConfig
@@ -52,21 +51,10 @@ fun main(args: Array<String>) {
         maxChunkLooks = (looks ?: 8) * 4,
     )
 
-    // A route that shows the game a few screens: nothing at first (logos, intros), then a button every five seconds
-    // for the whole run — confirm, wander, back, start — so a long run keeps opening screens.
-    val defaultRoute = buildString {
-        val buttons = listOf("A", "DOWN", "A", "UP", "B", "START", "A", "LEFT")
-        var frame = 400
-        var step = 0
-        while (frame < frames) {
-            if (isNotEmpty()) append(';')
-            append(buttons[step % buttons.size]).append('@').append(frame).append('-').append(frame + 8)
-            frame += 300
-            step++
-        }
-    }
+    // A route that shows the game a few screens (see ProbeRoutes): nothing at first (logos, intros), then a button
+    // every five seconds for the whole run — confirm, wander, back, start — so a long run keeps opening screens.
     val script = InputScript.parse(
-        args.firstOrNull { it.startsWith("--route=") }?.substringAfter("--route=") ?: defaultRoute,
+        args.firstOrNull { it.startsWith("--route=") }?.substringAfter("--route=") ?: ProbeRoutes.defaultRoute(frames),
     )
     // --resume: pick up the evidence a previous run left in <data>/readers/<id>.learning.json (and write it back at
     // the end), which is what makes "the app does not retrain every time" observable headlessly.
@@ -101,7 +89,7 @@ fun main(args: Array<String>) {
             console.step(1, script.inputAt(frame))
             val screen = FrameHash.dHash(console.framebuffer() ?: continue)
             // The app looks at the game a few times a second; so does this.
-            if (frame % 15 == 0) progress = calibrator.observe(screen, mainRam(console))
+            if (frame % 15 == 0) progress = calibrator.observe(screen, ProbeRoutes.mainRam(console))
             frame++
         }
     } finally {
@@ -160,10 +148,6 @@ fun main(args: Array<String>) {
         println("(dry run: add --write to save it to ${config.dataDirectory.resolve("readers")})")
     }
 }
-
-/** The main RAM of the frame the console just finished. */
-private fun mainRam(console: LibretroConsole): ByteArray =
-    ByteArray(console.memorySize(MemoryRegion.MAIN_RAM)).also { console.read(MemoryRegion.MAIN_RAM, 0, it.size, it) }
 
 /** One candidate signal, for the report. */
 private fun describe(signal: ReaderCalibrator.Signal): String =

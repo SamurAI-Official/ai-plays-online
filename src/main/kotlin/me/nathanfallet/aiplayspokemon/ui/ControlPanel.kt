@@ -840,6 +840,7 @@ private fun ReaderSection(controller: AppController) {
     val reader by controller.reader.collectAsState()
     val values by controller.readerValues.collectAsState()
     val learning by controller.learning.collectAsState()
+    val verification by controller.verification.collectAsState()
     learning?.let { progress ->
         // No reader yet: the app is learning one while the game is played (see emulator/ReaderCalibrator.kt).
         HorizontalDivider()
@@ -874,6 +875,23 @@ private fun ReaderSection(controller: AppController) {
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
         )
+    }
+    // What the values really did while the game was played (emulator/ReaderVerifier.kt): a value that claims to name
+    // screens has to read one value per screen, or the agent is told it is on a screen it has left.
+    verification?.let { check ->
+        Text(
+            "Check — ${check.summary}",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (check.problems.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.error,
+        )
+        for (problem in check.problems) {
+            Text(
+                "${problem.name}: ${problem.verdict.name.lowercase()} — ${problem.detail}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
     current.notes.takeIf { it.isNotBlank() }?.let { notes ->
         Text(notes, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

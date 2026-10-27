@@ -32,6 +32,8 @@ import me.nathanfallet.aiplayspokemon.emulator.FrameHash
 import me.nathanfallet.aiplayspokemon.emulator.ReaderCalibrator
 import me.nathanfallet.aiplayspokemon.emulator.ReaderLearningStore
 import me.nathanfallet.aiplayspokemon.emulator.ReaderMerge
+import me.nathanfallet.aiplayspokemon.emulator.ReaderVerification
+import me.nathanfallet.aiplayspokemon.emulator.ReaderVerifier
 import me.nathanfallet.aiplayspokemon.games.ProgressSignal
 import me.nathanfallet.aiplayspokemon.games.WalkthroughChapter
 import dev.kotlinds.pokemonclient.PokemonGame
@@ -148,6 +150,24 @@ class AppController(
 
     /** The reader's observations as they read right now (name → value), for the panel. */
     val readerValues: StateFlow<Map<String, String>> = _readerValues.asStateFlow()
+
+    /**
+     * What the reader's values really did while the game was played ([ReaderVerifier]): a value that claims to name
+     * screens has to read **one value per screen**, or the agent is told it is on a screen it has left. The panel shows
+     * it, and a reader of ours (learned, or one already in the user's own `<data>/readers`) gets the verdicts written
+     * back into it — a reader that ships with the app is only checked: writing it would shadow the shipped file with a
+     * user copy.
+     */
+    private val _verification = MutableStateFlow<ReaderVerification?>(null)
+
+    /** The check of this game's reader, live, or null while nothing has been checked yet. */
+    val verification: StateFlow<ReaderVerification?> = _verification.asStateFlow()
+
+    /** The check running against the reader in [reader], rebuilt when the reader itself changes (a learned one grows). */
+    private var verifier: ReaderVerifier? = null
+
+    /** When the check's verdicts were last written (a write is a file: at most every few seconds, see [verifyReader]). */
+    private var lastVerificationWriteMillis = 0L
 
     /**
      * The learner: a game with no reader teaches the app one while it is played (see [ReaderCalibrator]). It runs when
@@ -534,9 +554,60 @@ class AppController(
             return
         }
         if (reader.observations.isEmpty()) return
+        // One look at the game serves both: what the reader reads now, and what the check sees of it.
+        val picture = emulator.frames.value?.let { frame -> FrameHash.dHash(frame) }
+        var checked: ReaderVerification? = null
         _readerValues.value = runCatching {
-            emulator.observe { memory -> ReaderCatalog.observe(reader, memory) }
+            emulator.observe { memory ->
+                if (picture != null) checked = verifierFor(reader).observe(picture, memory)
+                ReaderCatalog.observe(reader, memory)
+            }
         }.getOrElse { _readerValues.value }
+        checked?.let { verification ->
+            _verification.value = verification
+            saveVerification(reader, verification)
+        }
+    }
+
+    /** The check of [reader], following it when the app learns more of it (the reader grows while it is played). */
+    private fun verifierFor(reader: ReaderSpec): ReaderVerifier {
+        val running = verifier
+        if (running == null) return ReaderVerifier(reader).also { verifier = it }
+        running.reread(reader)
+        return running
+    }
+
+    /**
+     * Writes what the check saw back into the reader (its `confidence` and one notes line, see
+     * [ReaderVerifier.verifiedReader]) — the reader then says how well it is doing, for whoever reads it next.
+     *
+     * Only a reader of ours is written: one the app learned itself, or one that is already in the user's own
+     * `<data>/readers` (a copy the user made, by calibrating or by editing). A reader that ships with the app is
+     * **never** written: that would shadow the shipped file with a user copy, and a later release could not fix it.
+     * Writes are a few seconds apart ([VERIFICATION_WRITE_INTERVAL_MILLIS]), and once more when the game closes.
+     */
+    private fun saveVerification(reader: ReaderSpec, verification: ReaderVerification, force: Boolean = false) {
+        // A check that has not seen enough says nothing: writing it would be a verdict about the route, not the reader.
+        if (!verification.isConclusive) return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastVerificationWriteMillis < VERIFICATION_WRITE_INTERVAL_MILLIS) return
+        lastVerificationWriteMillis = now
+        val mine = reader.isLearned || runCatching {
+            ReaderCatalog.user(profile.id, config.dataDirectory) != null
+        }.getOrDefault(false)
+        if (!mine) return
+        runCatching { ReaderCatalog.write(verifierFor(reader).verifiedReader(verification), config.dataDirectory) }
+            .onFailure { failure -> println("ai-plays-online: could not save the reader check: ${failure.message}") }
+    }
+
+    /**
+     * Writes the check's verdicts now (the game is closing). Harmless when nothing was checked, and when the reader is
+     * one that ships with the app (see [saveVerification]).
+     */
+    fun saveVerificationOnClose() {
+        val reader = reader.value ?: return
+        val verification = _verification.value ?: return
+        saveVerification(reader, verification, force = true)
     }
 
     /**
@@ -727,6 +798,9 @@ class AppController(
 
         /** Looks between two writes of a learned reader: enough for it to have grown, few enough to follow a run. */
         const val READER_WRITE_EVERY_LOOKS = 60
+
+        /** How often the check of a reader is written back into it at most (a write is a file, and a file is not free). */
+        const val VERIFICATION_WRITE_INTERVAL_MILLIS = 30_000L
 
         /** Times a chapter's landmark has to be seen on the same `screen` value before it becomes a progress signal. */
         const val MIN_LANDMARK_SIGHTINGS = 3

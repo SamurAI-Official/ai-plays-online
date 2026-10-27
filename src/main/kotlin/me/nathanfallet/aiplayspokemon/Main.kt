@@ -121,6 +121,8 @@ private class OpenGame(val controller: AppController, private val emulator: Cons
         // What the reader learner knows so far is written now: the next session resumes from it instead of starting
         // over (the console below is what closes the core, so this comes first).
         controller.saveLearningOnClose()
+        // And what the check of the reader saw: the reader then says how well it is holding up (docs/readers.md).
+        controller.saveVerificationOnClose()
         emulator.close() // unloads the game, which writes the in-game save to disk
     }
 

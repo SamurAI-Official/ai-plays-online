@@ -49,7 +49,8 @@ panel, and a walkthrough chapter whose milestone is `kind: memory` is verified f
   `scale` multiplies the value before it is shown (a fixed-point position, for instance).
 - **`values`** names the values the model should understand. Unlisted values are shown as numbers.
 - **`confidence`** is what the calibration thought of it, and **`note`** is the evidence. Neither is decoration: a
-  reader is a claim about someone else's program, and these are how a later reader checks the claim.
+  reader is a claim about someone else's program, and these are how a later reader checks the claim — the app also
+  rewrites them itself as it plays, from what it sees of the values (see [Checking a reader still holds up](#checking-a-reader-still-holds-up)).
 - **`progress`** entries are named signals a walkthrough's `kind: memory` milestone refers to by `signal`.
 
 ### Values made of more than one address
@@ -195,7 +196,8 @@ from them would have been worse than useless: it would have told the AI it was o
 - **It only learns for a game that has no reader, or for one it learned itself.** A shipped or hand-written reader (and
   the user's own file) wins, and is never extended; a `learned while playing` reader is the app's own and keeps growing.
 - **Review it before trusting it.** `provenance: "learned while playing"` and the note on each value say how it was
-  found: what it saw, how often it agreed, and how many looks of checking it survived.
+  found: what it saw, how often it agreed, and how many looks of checking it survived. The app also checks the reader it
+  is using as it plays and writes the verdicts back (see [Checking a reader still holds up](#checking-a-reader-still-holds-up)).
 
 ### Driving it yourself
 
@@ -227,6 +229,73 @@ wrote .../readers/final-fantasy-iii.json (8 values, 0 progress signals)
 In the app it happens by itself: open a game with no reader, play it (or let the AI play), and watch the **Reader**
 section of the panel — it shows how many looks, how many screens, which part of memory is being examined, and how many
 signals it has. When it is confident it writes `<data>/readers/<id>.json` and the panel starts showing the values live.
+
+## Checking a reader still holds up
+
+A reader is a claim about someone else's program, and claims go stale: a game that gets patched, a value a hand
+calibration picked that never really held, a learned signal that was a clock in disguise. So the app **checks the
+reader it is using while the game is played** (`emulator/ReaderVerifier.kt`) and writes what it saw back into it —
+`confidence` and one `notes` line.
+
+The check applies the same rule the learner writes readers under: for every value that claims to name screens (it has a
+`values` map), it asks whether it read **one value per screen**, and whether it tells at least two screens apart. Each
+value comes back with one of four verdicts:
+
+| verdict | what it means |
+| --- | --- |
+| `ok` | it held one value on 90%+ of the looks at every screen, and told screens apart: the claim holds |
+| `inconsistent` | it took more than one value on a screen it had already seen — it moves on its own, so the agent would be told it is on a screen it has left |
+| `constant` | it never changed: it cannot say which screen is up (it may still be a constant the reader wanted, but as a screen value it is not verified) |
+| `unreadable` | it was never read: a guard that never held in this game, a pointer outside main RAM, an address out of range |
+
+A value that claims nothing about screens is **reported, not judged**: a counter is expected to move and text is
+expected to be rewritten, so the panel and the tools say what it did (`moved 412 times, from 0 to 412`) without holding
+it to a rule it never claimed.
+
+In the app it runs on the same look at the game that feeds the panel's live values, so the **Reader** section gains a
+line like:
+
+```text
+Check — checked over 1,240 looks and 41 screens: 3 of 4 screen values hold · 1 to look at
+game_mode: inconsistent — now: 4, changed 137 times
+```
+
+The check only writes what it can stand behind:
+
+- A screen value **caught moving within a screen it had seen** is downgraded to how often it really held (`confidence`
+  becomes the observed agreement, below 90% by construction). A value that holds keeps the confidence its calibration
+  gave it — the check does not inflate a claim, and it does not deflate one it merely could not exercise.
+- A value that never changed, or was never readable, is **reported, not refuted**: one screen makes every value look
+  constant, so the panel and the notes say what happened (`never read (guard off 412 times)`, `out of range 41 times`)
+  and `confidence` is left alone.
+- The reader's notes gain **one rewritten** `Checked while playing:` line — rewritten, not piled up, so a reader checked
+  a hundred times has one line about it.
+- Nothing is written at all until the run has shown enough to mean something (60 looks over 3 screens): below that the
+  panel says `checking… N looks and S screens so far`, because a verdict then would be about the route, not the reader.
+
+**A reader that ships with the app is never written**: that would shadow the shipped file with a user copy, and a later
+release could not fix it. It is checked and reported in the panel, and the file is only written when the reader is the
+app's own (`learned while playing`) or one already in your own `<data>/readers`. Writes are 30 s apart at most, plus
+once when the game closes. A reader the app is still learning is followed as it grows: the looks already taken stay, and
+only a value whose reading changed starts over.
+
+### Driving it yourself
+
+```bash
+# Check the reader of a ROM headlessly: one line per value, with the evidence (add --write to write it back):
+./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.ReaderVerifyProbeKt \
+  -PdevArgs="/path/to/game.nds|3000|desmume"
+
+#   ok           screen at 0x23867c6: 41/41 screens held, 6 values, agreement 1.00 — now: 84, changed 6 times
+#   INCONSISTENT menu at 0x237b290: 3/7 screens held, 9 values, agreement 0.71 — now: 4, changed 137 times
+
+# Options: |frames|core, --write (write the verdicts into the reader), --force (allow it for a shipped reader),
+#          --route=A@900-908;DOWN@1400-1408 (drive a different route)
+```
+
+It says nothing about a screen the run never showed: a value that is fine on the three screens you walked through may
+still break on the screen you did not, which is why the app keeps checking every session instead of once. A run that
+shows fewer than 3 screens or 60 looks prints `too little to judge the reader` and writes nothing.
 
 ## Playing through a reader
 
