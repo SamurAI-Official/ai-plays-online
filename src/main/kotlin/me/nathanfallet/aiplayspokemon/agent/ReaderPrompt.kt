@@ -42,6 +42,7 @@ object ReaderPrompt {
         stagnation: Int,
         memory: JsonObject? = null,
         stop: ReaderChain.Stop? = null,
+        affordances: JsonObject? = null,
     ): JsonObject = buildJsonObject {
         put("game", profile.title)
         put("objective", objective)
@@ -49,6 +50,9 @@ object ReaderPrompt {
             for ((name, value) in values) put(name, value)
         }
         memory?.let { put("memory", it) }
+        // What the player has found out about the game's screens: which action leads where from here, which ones do
+        // nothing, and the way to the screen the reader aims at (agent/ReaderAffordances.kt).
+        affordances?.let { put("affordances", it) }
         screen?.let { view ->
             putJsonObject("screen") {
                 putJsonObject("top") { putScreenView(view.top) }
@@ -117,6 +121,11 @@ object ReaderPrompt {
         append("is still moving: if your action changed nothing, the plan stops there and `last_action` says what was ")
         append("left as `not_done` with `not_done_code` and `not_done_reason`. Use `when` when you know what the game ")
         append("should show next — it is how a plan survives a menu that has one entry less than you thought. ")
+        append("`affordances` is the map of the game you have found out by playing: `from_here` says where each action ")
+        append("led from this screen (`goes_to`, and `times` for how often), `nothing_happens_here` says which ones did ")
+        append("nothing, and `to_reach.actions` is the shortest way you know to the screen the reader aims at — follow ")
+        append("it when it is there. When the block is missing, or has no `from_here`, nothing has been tried here ")
+        append("yet: this is new ground, explore it. ")
         append("`screen` is what the picture shows and how it is moving: use it — a dialogue box wants A, a menu wants ")
         append("the D-pad, a stable picture means the game is waiting for you, and a picture that keeps changing is ")
         append("loading or animating. `screen.looks_like` is a reading of the picture, and like the walkthrough it can ")

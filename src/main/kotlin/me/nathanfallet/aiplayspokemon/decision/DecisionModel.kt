@@ -68,7 +68,7 @@ data class StepCondition(
     /** True when [values] satisfies every part of this condition (a value that is not there at all does not). */
     fun holds(values: Map<String, String>): Boolean {
         val rendered = values[value] ?: return false
-        return (isText == null || matches(rendered, isText)) && (isNotText == null || !matches(rendered, isNotText))
+        return (isText == null || names(rendered, isText)) && (isNotText == null || !names(rendered, isNotText))
     }
 
     /** One sentence for the model and the history: `` `screen` is "single player menu (18)" ``. */
@@ -82,21 +82,26 @@ data class StepCondition(
         }
     }
 
-    /** True when [rendered] reads [want]: the whole text, the name before the number, or the number itself. */
-    private fun matches(rendered: String, want: String): Boolean = want.trim().lowercase() in formsOf(rendered)
+    companion object {
 
-    /** The readable forms of a rendered value: `single player menu (18)` → itself, `single player menu`, `18`. */
-    private fun formsOf(rendered: String): Set<String> {
-        val text = rendered.trim().lowercase()
-        val number = NUMBER.find(text)?.value ?: return setOf(text)
-        return setOf(text, number, text.replace(number, "").trim().trimEnd('(', ')', ':', '=', '-').trim())
-            .filter { it.isNotEmpty() }
-            .toSet()
-    }
+        /**
+         * True when a value rendered as [rendered] is the one [want] names: the whole text, the name before the number,
+         * or the number itself, case-insensitively — never a substring, so `1` does not match `18`. The same rule
+         * [holds] applies, shared with whoever has to tell one screen from another ([ReaderAffordances]).
+         */
+        fun names(rendered: String, want: String): Boolean = want.trim().lowercase() in formsOf(rendered)
 
-    private companion object {
+        /** The readable forms of a rendered value: `single player menu (18)` → itself, `single player menu`, `18`. */
+        private fun formsOf(rendered: String): Set<String> {
+            val text = rendered.trim().lowercase()
+            val number = NUMBER.find(text)?.value ?: return setOf(text)
+            return setOf(text, number, text.replace(number, "").trim().trimEnd('(', ')', ':', '=', '-').trim())
+                .filter { it.isNotEmpty() }
+                .toSet()
+        }
+
         /** The number a value carries, in `single player menu (18)` or `gold 120`. */
-        val NUMBER = Regex("""\d+""")
+        private val NUMBER = Regex("""\d+""")
     }
 }
 

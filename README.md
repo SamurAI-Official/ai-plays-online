@@ -188,8 +188,11 @@ still moving, so a plan stops — reporting `not_done`/`not_done_code`, exactly 
 pressing blindly into a screen it did not plan for. It also **remembers**: `agent/ReaderMemory` keeps the model's own
 note, what each action did on each screen (grouped and counted), and the screens it has been on, in
 `<data>/readers/<id>.memory.json` — fed back to the model as the prompt's `memory` block, so a new session starts
-knowing the game instead of re-exploring the same menus. Verified headlessly on AoE with a scripted policy that reads
-nothing but the reader's `screen` value:
+knowing the game instead of re-exploring the same menus. That evidence is distilled into a **map of the screens**
+(`agent/ReaderAffordances`): which action leads where from here, which ones do nothing, and the shortest known way to the
+screen the reader aims at (`to_reach.actions`) — so a run that starts at the front end is told the presses that reach the
+main menu instead of finding them again. Verified headlessly on AoE with a scripted policy that reads nothing but the
+reader's `screen` value:
 
 ```text
 #11  screen select campaign (64) · menu no menu (0)   →  press_a  →  screen: select campaign → select mission

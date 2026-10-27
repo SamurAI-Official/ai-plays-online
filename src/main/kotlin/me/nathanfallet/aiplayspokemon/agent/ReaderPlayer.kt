@@ -111,6 +111,8 @@ class ReaderPlayer(
             }
             val view = screenState.view(frame, chapter, reports)
             _state.update { it.copy(screenRead = view.summary()) }
+            // The map of the game as it is known right now: it grows with every decision, so it is read per decision.
+            val known = memory.known()
             val request = ChoiceRequest(
                 state = ReaderPrompt.state(
                     profile = profile,
@@ -124,6 +126,16 @@ class ReaderPlayer(
                     stagnation = stagnation,
                     memory = memory.describe(before),
                     stop = lastStop,
+                    // What the player has found out about the game's screens, from the memory it keeps across sessions:
+                    // where each action leads from here, what does nothing, and the way to the screen the reader's own
+                    // progress signals aim at (agent/ReaderAffordances.kt).
+                    affordances = known.let { map ->
+                        ReaderAffordances.describe(
+                            known = map,
+                            screen = ReaderAffordances.screenOf(before),
+                            goal = ReaderAffordances.goal(reader, map),
+                        )
+                    },
                 ),
                 instructions = ReaderPrompt.instructions(profile, chapter, model.generative),
                 options = ReaderActions.options(),
@@ -158,6 +170,8 @@ class ReaderPlayer(
             val performed = mutableListOf<String>()
             var problem: String? = null
             var stop: ReaderChain.Stop? = null
+            // The reader as it stands between the steps of the plan: each step's edge of the map is recorded from it.
+            var current = before
             for ((index, step) in plan.withIndex()) {
                 val (actionReports, outcome) = perform(step.action)
                 reports = actionReports
@@ -166,19 +180,21 @@ class ReaderPlayer(
                     problem = outcome
                     break
                 }
-                val next = plan.getOrNull(index + 1) ?: break
-                // What the game shows right after this step: what the next step's condition is about, and whether
-                // anything happened at all (in the reader, or on a screen).
+                // What the game shows right after this step: one edge of the known map, what the next step's condition
+                // is about, and whether anything happened at all (in the reader, or on a screen).
                 val now = observe()
-                val moved = actionReports.values.any { it.changed } ||
-                    ReaderActions.describeChange(before, now) != ReaderActions.NOTHING_CHANGED
+                val changeHere = ReaderActions.describeChange(current, now)
+                memory.recordStep(step.action, current, now, changeHere)
+                current = now
+                val next = plan.getOrNull(index + 1) ?: break
+                val moved = actionReports.values.any { it.changed } || changeHere != ReaderActions.NOTHING_CHANGED
                 stop = ReaderChain.verdict(next, now, moved)?.let { reason ->
                     reason.copy(notDone = plan.drop(index + 1).map { it.described })
                 }
                 if (stop != null) break
             }
 
-            val after = observe()
+            val after = current
             val change = ReaderActions.describeChange(before, after)
             val summary = ReaderActions.summary(before) + " | " + view.summary()
             stagnation = if (change == ReaderActions.NOTHING_CHANGED) stagnation + 1 else 0
@@ -209,6 +225,7 @@ class ReaderPlayer(
             memory.record(
                 action = lastAction,
                 before = before,
+                after = after,
                 change = change,
                 historyLine = history.last(),
             )

@@ -17,10 +17,14 @@ import kotlin.test.assertTrue
  */
 class ReaderMemoryTest {
 
-    private fun ReaderMemory.decision(action: String, screen: String, change: String) {
+    /** One decision on [screen], which left the game on [after] (the same screen unless the test says otherwise). */
+    private fun ReaderMemory.decision(action: String, screen: String, change: String, after: String = screen) {
+        // The player records each step (the map) and the decision (the history), in that order.
+        recordStep(action, mapOf("screen" to screen), mapOf("screen" to after), change)
         record(
             action = action,
             before = mapOf("screen" to screen),
+            after = mapOf("screen" to after),
             change = change,
             historyLine = "#1 $action → $change",
         )
@@ -141,9 +145,16 @@ class ReaderMemoryTest {
     @Test
     fun aReaderWithoutAScreenValueStillRemembersWhereItWas() {
         val memory = ReaderMemory()
+        memory.recordStep(
+            action = "wait",
+            before = mapOf("gold" to "120", "hp" to "18"),
+            after = mapOf("gold" to "130", "hp" to "18"),
+            change = "gold: 120 → 130",
+        )
         memory.record(
             action = "wait",
             before = mapOf("gold" to "120", "hp" to "18"),
+            after = mapOf("gold" to "130", "hp" to "18"),
             change = "gold: 120 → 130",
             historyLine = "#1 wait → gold: 120 → 130",
         )

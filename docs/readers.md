@@ -392,6 +392,58 @@ On AoE, with the scripted probe model that plans "press A, then press A again if
 #9 is the plan working (the first press reached the submenu, so the second ran); #7 and #10 are it refusing to press
 blindly into a screen it did not plan for.
 
+### The map of the game it builds as it plays
+
+What the memory records (`press_a` on `main menu (19)` led to `single player menu (18)`, 3 times) is distilled into a
+**map of the screens** (`agent/ReaderAffordances.kt`) and given to the model as the prompt's `affordances` block:
+
+```json
+"affordances": {
+  "screen": "main menu (19)",
+  "from_here": [{ "action": "press_a", "goes_to": "single player menu (18)", "times": 3 }],
+  "nothing_happens_here": [{ "action": "press_b", "tried": 2 }],
+  "to_reach": {
+    "screen": "in mission (84)",
+    "actions": ["press_a", "press_a", "press_a"],
+    "how_much_to_trust_this": "this is what worked before, not a promise: the game may be in a state the reader does not show, and a step can be refused (`last_action.not_done` says so when it is)"
+  }
+}
+```
+
+- **`from_here`** is one edge per action, taken from the reader right after each step (a decision that ran a plan of
+  three steps is three edges, not one). An action that led to **two** different screens keeps both, with how often each:
+  the map never pretends one destination is the only one.
+- **`nothing_happens_here`** is what changed nothing on this screen, and how many times: the dead ends.
+- **`to_reach`** is the shortest known way to the screen the reader's own progress signals aim at (the `kind: memory`
+  chapter, e.g. AoE's `in-mission` = 84). A breadth-first walk over the known edges, at most 8 steps — beyond that it is
+  a walk, not a route through a menu. The goal is matched the way a step condition matches a value, so the signal's `84`
+  finds the screen the reader renders as `in mission (84)`.
+- The block is **absent** when there is nothing to say (a screen nothing was tried on, and no known way from it): no
+  `from_here` is what says the ground is new, and the instructions say so.
+
+The map is as precise as the reader is: AoE's `screen` value stays `230` across the mission-select screens (its `menu`
+value is what moves there), so the map knows "press_a here changed nothing" for those and nothing more — which is true,
+and the same conclusion the rest of this document draws: a game that needs finer state needs a better reader.
+
+Verified headlessly on AoE, run 1 learning (18 decisions) and run 2 resuming:
+
+```text
+memory: resuming 18 decisions over 5 screens, with its own note: "my note: press A through the menus…"
+affordances at the start of the run: {"screen":"boot (0)","from_here":[{"action":"press_a","goes_to":"publisher logos (129)","times":1}]}
+affordances: 5 known transitions over 6 screens
+affordances:   boot (0) -press_a-> publisher logos (129) (2)          # once per session
+affordances:   publisher logos (129) -press_a-> main menu (19) (2)
+affordances:   main menu (19) -press_a-> single player menu (18) (2)
+affordances:   single player menu (18) -press_a-> select campaign (64) (2)
+affordances:   select campaign (64) -press_a-> 230 (2)
+affordances: from 'boot (0)' to 'select campaign (64)': … "to_reach":{"screen":"select campaign (64)",
+              "actions":["press_a","press_a","press_a","press_a"], …}
+```
+
+The last line is the point: a run that starts at boot is told the four presses that reach the campaign screen — because
+an earlier session found them — instead of discovering the front end again. `--goal=<screen>` asks the probe for the way
+to a screen of your choosing.
+
 What it is not: it cannot read the picture by itself, so `ScreenState` gives it what the app *can* say — whether the
 picture changed while it acted, how long it has been still (a still picture is a game waiting for input), which
 walkthrough landmark it matches, and, when the model has vision, its own one-line reading of the screenshot

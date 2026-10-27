@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.nathanfallet.aiplayspokemon.agent.ReaderAffordances
 import me.nathanfallet.aiplayspokemon.agent.ReaderMemory
 import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryStore
 import me.nathanfallet.aiplayspokemon.agent.ReaderPlayer
@@ -69,6 +70,9 @@ fun main(args: Array<String>) = runBlocking {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     // --memory: pick up what a previous run learned about this game, and write down what this one learns.
     val useMemory = args.any { it == "--memory" }
+    // --goal=<screen>: ask the map for a way to this screen instead of the one the reader's own signals aim at. It is
+    // how the route through the menus can be shown for a game whose reader aims at a screen this run never reaches.
+    val goalOverride = args.firstOrNull { it.startsWith("--goal=") }?.substringAfter("--goal=")
     val romSha256 = if (useMemory) sha256OfRom(Files.readAllBytes(rom)) else ""
     val known = if (useMemory) ReaderMemoryStore.of(profile.id, config.dataDirectory, romSha256) else null
     known?.let { memory ->
@@ -102,15 +106,16 @@ fun main(args: Array<String>) = runBlocking {
         walkthrough = me.nathanfallet.aiplayspokemon.games.WalkthroughState(),
         memory = memory,
     )
-
     println("== reader play probe: ${profile.title}, $decisions decisions on $core ==")
     println("reader: ${reader.observations.size} values, ${reader.progress.size} signals (${reader.provenance})")
     emulator.start()
     player.play()
     var lastSeen = 0
+    var firstRequest: kotlinx.serialization.json.JsonObject? = null
     while (player.state.value.decisions < decisions && player.state.value.error == null) {
         delay(200)
         val state = player.state.value
+        if (firstRequest == null) firstRequest = state.lastRequestState
         if (state.decisions != lastSeen) {
             lastSeen = state.decisions
             val decision = state.lastDecision
@@ -126,13 +131,27 @@ fun main(args: Array<String>) = runBlocking {
     println("decisions: ${player.state.value.decisions}, error: ${player.state.value.error ?: "none"}")
     println("progress signal 'in-mission': $reached")
     // The `memory` block of the last request is what the model was told about its own past: proof that what an earlier
-    // run learned is in the prompt, and not only on disk.
+    // run learned is in the prompt, and not only on disk. `affordances` is the same for the map of the game — printed
+    // for the first request (where the map matters most) and for the last one.
     player.state.value.lastRequestState?.get("memory")?.let { block -> println("memory in the last request: $block") }
+    firstRequest?.get("affordances")?.let { block -> println("affordances at the start of the run: $block") }
+    player.state.value.lastRequestState?.get("affordances")?.let { block ->
+        println("affordances in the last request: $block")
+    }
     if (useMemory) {
         val file = ReaderMemoryStore.write(memory.toData(profile.id, romSha256), config.dataDirectory)
         println("memory: wrote $file (${memory.totalDecisions} decisions over ${memory.screensVisited.size} screens)")
         memory.screensVisited.take(6).forEach { visit -> println("memory:   ${visit.screen}: ${visit.decisions}") }
         println("memory: note now: ${memory.note ?: "none"}")
+    }
+    // What the map of the game knows now, and (with --goal) the route it would give from where the run started: the
+    // shortest known way to a screen, which is what a model gets to plan with.
+    val knownMap = memory.known()
+    println("affordances: ${knownMap.moves.size} known transitions over ${knownMap.screens.size} screens")
+    knownMap.moves.take(10).forEach { move -> println("affordances:   ${move.from} -${move.action}-> ${move.to} (${move.times})") }
+    goalOverride?.let { goal ->
+        val from = firstRequest?.get("reader")?.jsonObject?.get("screen")?.jsonPrimitive?.content.orEmpty()
+        println("affordances: from '$from' to '$goal': ${ReaderAffordances.describe(knownMap, from, goal)}")
     }
     emulator.systemLog.entries.value.filter { it.contains("screen read") }.takeLast(3).forEach { println("log: $it") }
     emulator.close()
@@ -145,7 +164,8 @@ fun main(args: Array<String>) = runBlocking {
  * wait for the game to get on with it. This is the scripted stand-in for an LLM, and it is deliberately dumb.
  *
  * It also writes itself a note on its first decision, like a model with `modelNotes` on does: that is what proves the
- * note survives a session (the next run's memory block carries it back).
+ * note survives a session (the next run's memory block carries it back). On a screen it does not know, it presses A
+ * (the universal way on): that is also what makes it explore — and what fills the known map of the game.
  */
 private class RouteModel : DecisionModel {
 
@@ -162,7 +182,8 @@ private class RouteModel : DecisionModel {
             screen.contains("select mission") -> "press_a"
             screen.contains("briefing") -> "press_a"
             screen.contains("in mission") -> "hold_right"
-            else -> "wait"
+            // Nothing known about this screen: A is the way most games move on, and trying it is what fills the map.
+            else -> "press_a"
         }
         val note = if (decisions++ == 0) "my note: press A through the menus, then hold right in a mission" else null
         // A plan, not just a sequence: press A, then press A again **if** the game did what this screen promised. The

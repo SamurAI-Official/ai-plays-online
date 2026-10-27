@@ -52,7 +52,19 @@ data class ReaderMemoryData(
 
     /** One thing the player tried on one screen, and what it did there. */
     @Serializable
-    data class Outcome(val screen: String, val action: String, val result: String, val times: Int = 1)
+    data class Outcome(
+        val screen: String,
+        val action: String,
+        val result: String,
+        val times: Int = 1,
+        /**
+         * The screens the action led to, and how often each: kept as data rather than parsed out of [result], because it
+         * is what makes the known map of the game exact ([ReaderAffordances]). More than one entry means the action went
+         * somewhere else another time (the game was in a state the reader does not show), which the map says out loud
+         * instead of pretending the first destination is the only one. Empty when the action never moved the screen.
+         */
+        val destinations: Map<String, Int> = emptyMap(),
+    )
 
     /**
      * True when this memory can be used for the ROM [romSha256] the app is playing: its own hash is the same, or it was
@@ -112,24 +124,38 @@ class ReaderMemory(
         get() = screens.entries.sortedByDescending { it.value }.map { ReaderMemoryData.ScreenVisit(it.key, it.value) }
 
     /**
-     * Records the decision that took [action] on the screen [before] shows, and what the reader read afterwards
-     * ([change] is how the player described it, [historyLine] the line the prompt's history shows). A repeat of the same
-     * action on the same screen is grouped instead of piling up, and counted: "press_a here did this, three times" is
-     * what tells a model whether a dead end is worth trying again.
+     * Records one **step** of a decision: what [action] did on the screen [before] shows, and where it left the game
+     * ([after]). This is the evidence the map of the game is built from ([ReaderAffordances]), one edge per action — a
+     * decision that ran a plan of three steps is three edges, not one.
      */
-    fun record(action: String, before: Map<String, String>, change: String, historyLine: String) {
-        decisions++
+    fun recordStep(action: String, before: Map<String, String>, after: Map<String, String>, change: String) {
         val screen = screenOf(before)
-        screens.merge(screen, 1, Int::plus)
         val key = "$screen|$action"
         val previous = outcomes.remove(key)
+        // Where it led, as data: the map of the game is built from this, not from the text of the change.
+        val landed = screenOf(after).takeIf { change != NOTHING_CHANGED }
+        val destinations = previous?.destinations.orEmpty().let { known ->
+            if (landed == null) known else known + (landed to (known[landed] ?: 0) + 1)
+        }
         outcomes[key] = ReaderMemoryData.Outcome(
             screen = screen,
             action = action,
             result = change,
             times = (previous?.times ?: 0) + 1,
+            destinations = destinations,
         )
         while (outcomes.size > maxOutcomes) outcomes.remove(outcomes.keys.first())
+    }
+
+    /**
+     * Records the **decision** that took [action] on the screen [before] shows, and what the reader read afterwards
+     * ([change] is how the player described it, [historyLine] the line the prompt's history shows). A repeat of the same
+     * action on the same screen is grouped instead of piling up, and counted: "press_a here did this, three times" is
+     * what tells a model whether a dead end is worth trying again.
+     */
+    fun record(action: String, before: Map<String, String>, after: Map<String, String>, change: String, historyLine: String) {
+        decisions++
+        screens.merge(screenOf(before), 1, Int::plus)
         history.addLast(historyLine)
         while (history.size > maxHistory) history.removeFirst()
         decisionsWithoutProgress = if (change == NOTHING_CHANGED) decisionsWithoutProgress + 1 else 0
@@ -202,8 +228,10 @@ class ReaderMemory(
     }
 
     /** The screen [values] shows, as a key: the reader's own `screen` value, or every value when there is none. */
-    private fun screenOf(values: Map<String, String>): String = values["screen"]
-        ?: values.entries.joinToString(", ") { "${it.key} ${it.value}" }.ifEmpty { UNKNOWN_SCREEN }.take(MAX_SCREEN_KEY)
+    private fun screenOf(values: Map<String, String>): String = ReaderAffordances.screenOf(values)
+
+    /** What the player knows about the game's screens, distilled from what it tried where ([ReaderAffordances]). */
+    fun known(): ReaderAffordances.Known = ReaderAffordances.Known(outcomes.values.toList())
 
     /** This memory as data, to be written down ([ReaderMemoryStore]). */
     fun toData(id: String, romSha256: String): ReaderMemoryData = ReaderMemoryData(
@@ -236,11 +264,6 @@ class ReaderMemory(
 
         /** How many outcomes elsewhere are worth telling the model about. */
         private const val WORTH_REMEMBERING = 12
-
-        /** Longest screen key (a reader with no `screen` value: every value stands for the screen). */
-        private const val MAX_SCREEN_KEY = 80
-
-        private const val UNKNOWN_SCREEN = "unknown"
     }
 }
 
