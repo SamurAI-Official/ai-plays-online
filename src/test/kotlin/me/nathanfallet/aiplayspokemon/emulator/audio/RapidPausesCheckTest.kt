@@ -13,6 +13,8 @@ import java.nio.file.StandardCopyOption
 import java.util.Collections
 import kotlin.math.roundToInt
 import kotlin.random.Random
+import me.nathanfallet.aiplayspokemon.gatedPath
+import me.nathanfallet.aiplayspokemon.optionalPath
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -24,7 +26,7 @@ import kotlin.test.assertTrue
  * gaps the device heard.
  *
  * Needs a ROM and cores, so it only runs when `PAUSE_MUSIC_DATA` (a data directory with `cores/`; the test writes
- * `states/` there), `POKEMON_ROM` and `PAUSE_MUSIC_RAPID_STATE` (a save state of `EMULATOR_CORE`, default DeSmuME,
+ * `states/` there), `PAUSE_MUSIC_ROM` and `PAUSE_MUSIC_RAPID_STATE` (a save state of `EMULATOR_CORE`, default DeSmuME,
  * with music playing) are set. Optional: `PAUSE_MUSIC_CYCLES` (default 20), `PAUSE_MUSIC_SEED` (default 1),
  * `PAUSE_MUSIC_OUT` (receives `<PAUSE_MUSIC_NAME, default rapid>.wav`).
  */
@@ -96,9 +98,9 @@ class RapidPausesCheckTest {
 
     @Test
     fun rapidPausesThroughTheConsoleHost() {
-        val data = System.getenv("PAUSE_MUSIC_DATA")?.let(Path::of) ?: return
-        val rom = Path.of(System.getenv("POKEMON_ROM") ?: return)
-        val stateFile = Path.of(System.getenv("PAUSE_MUSIC_RAPID_STATE") ?: return)
+        val data = gatedPath("PAUSE_MUSIC_DATA", "a data directory with cores/")
+        val rom = gatedPath("PAUSE_MUSIC_ROM", "a ROM to play and pause")
+        val stateFile = gatedPath("PAUSE_MUSIC_RAPID_STATE", "a save state with music playing")
         val cycles = System.getenv("PAUSE_MUSIC_CYCLES")?.toInt() ?: 20
         val random = Random(System.getenv("PAUSE_MUSIC_SEED")?.toInt() ?: 1)
         val spec = LibretroCoreSpec.forRom(rom.toKotlinxPath(), System.getenv("EMULATOR_CORE"))

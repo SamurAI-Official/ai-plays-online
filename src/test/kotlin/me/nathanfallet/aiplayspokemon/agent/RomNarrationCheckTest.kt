@@ -10,6 +10,8 @@ import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readBytes
+import me.nathanfallet.aiplayspokemon.gatedPath
+import me.nathanfallet.aiplayspokemon.optionalPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -26,9 +28,9 @@ class RomNarrationCheckTest {
 
     @Test
     fun aDecisionOnTheRealGameIsSaidByTheVoice() {
-        val rom = System.getenv("NARRATION_ROM")?.let(Path::of) ?: return
-        val data = System.getenv("NARRATION_DATA")?.let(Path::of) ?: return
-        val out = System.getenv("NARRATION_OUT")?.let(Path::of)?.also { Files.createDirectories(it) }
+        val rom = gatedPath("NARRATION_ROM", "a HeartGold ROM to build a real decision on")
+        val data = gatedPath("NARRATION_DATA", "a data directory with cores/")
+        val out = optionalPath("NARRATION_OUT")?.also { Files.createDirectories(it) }
         val spec = LibretroCoreSpec.forRom(rom.toKotlinxPath(), System.getenv("EMULATOR_CORE"))
         val game = PokemonGames.detect(rom.readBytes())
         checkNotNull(game) { "not a Pokémon ROM" }

@@ -11,6 +11,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.Collections
+import me.nathanfallet.aiplayspokemon.gatedPath
+import me.nathanfallet.aiplayspokemon.optionalPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -25,7 +27,7 @@ import kotlin.test.assertIs
  * process. What the sound card played is written as a WAV.
  *
  * Needs a ROM and cores, so it only runs when `PAUSE_MUSIC_DATA` (a data directory with `cores/`; the test writes
- * `states/` there), `POKEMON_ROM` and `PAUSE_MUSIC_SONG_CHANGE_STATE` (a DeSmuME save state of HeartGold US taken just
+ * `states/` there), `PAUSE_MUSIC_ROM` and `PAUSE_MUSIC_SONG_CHANGE_STATE` (a DeSmuME save state of HeartGold US taken just
  * after stepping onto Route 22 from Viridian City, the song change pending) are set; `PAUSE_MUSIC_OUT` receives
  * `song_change_wait_off.wav` / `song_change_wait_on.wav`.
  */
@@ -33,9 +35,9 @@ class SongChangePauseCheckTest {
 
     @Test
     fun aPauseDuringASongChangeStartsOnTheNewSongAndIsResynced() {
-        val data = System.getenv("PAUSE_MUSIC_DATA")?.let(Path::of) ?: return
-        val rom = Path.of(System.getenv("POKEMON_ROM") ?: return)
-        val stateFile = Path.of(System.getenv("PAUSE_MUSIC_SONG_CHANGE_STATE") ?: return)
+        val data = gatedPath("PAUSE_MUSIC_DATA", "a data directory with cores/")
+        val rom = gatedPath("PAUSE_MUSIC_ROM", "a ROM to play and pause")
+        val stateFile = gatedPath("PAUSE_MUSIC_SONG_CHANGE_STATE", "a save state taken while the song changes")
         val spec = LibretroCoreSpec.forRom(rom.toKotlinxPath(), System.getenv("EMULATOR_CORE"))
         Files.createDirectories(data.resolve("states"))
         Files.copy(stateFile, data.resolve("states").resolve("${rom.fileName}.state7"), StandardCopyOption.REPLACE_EXISTING)

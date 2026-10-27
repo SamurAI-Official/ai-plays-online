@@ -7,6 +7,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import kotlin.io.path.readBytes
+import me.nathanfallet.aiplayspokemon.gatedPath
+import me.nathanfallet.aiplayspokemon.optionalPath
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -17,7 +19,7 @@ import kotlin.test.assertTrue
  * `host`/`join` demo. Gated like the other ROM tests: it runs only with
  *
  * ```
- * POKEMON_ROM=/path/game.nds NETPLAY_TEST_ROLLBACK_CORE=/path/melonds_libretro_rollback.dylib
+ * NETPLAY_TEST_ROM=/path/game.nds NETPLAY_TEST_ROLLBACK_CORE=/path/melonds_libretro_rollback.dylib
  * ```
  *
  * set. The core is copied into each peer's data directory, so the two `LibretroConsole`s load two
@@ -36,8 +38,10 @@ class NetplaySessionTest {
 
     @Test
     fun twoPeersSynchronizeAndRunFramesOverUdp() {
-        val rom = System.getenv("POKEMON_ROM")?.let(Path::of) ?: return
-        val core = System.getenv("NETPLAY_TEST_ROLLBACK_CORE")?.let(Path::of) ?: return
+        // The ROM variable is this test's own (`POKEMON_ROM` is what the *app* opens a game with: setting it for this
+        // test would also make `AppConfigTest` fail, which is exactly the trap this name avoids).
+        val rom = gatedPath("NETPLAY_TEST_ROM", "a ROM to run two peers on")
+        val core = gatedPath("NETPLAY_TEST_ROLLBACK_CORE", "a rollback core to run two peers with")
         val hash = sha256OfRom(rom.readBytes())
 
         val hostSettings = NetplaySettings(

@@ -11,6 +11,8 @@ import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.math.roundToInt
+import me.nathanfallet.aiplayspokemon.gatedPath
+import me.nathanfallet.aiplayspokemon.optionalPath
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertIs
@@ -21,7 +23,7 @@ import kotlin.test.assertIs
  * console thread only calls [ShadowAudio.onIdle]), then 10 s after the resume. Nothing is played: the audio output is
  * captured and written as a WAV.
  *
- * Needs a ROM and cores, so it only runs when `PAUSE_MUSIC_DATA` (a data directory with `cores/`), `POKEMON_ROM` and
+ * Needs a ROM and cores, so it only runs when `PAUSE_MUSIC_DATA` (a data directory with `cores/`), `PAUSE_MUSIC_ROM` and
  * `PAUSE_MUSIC_STATE` (a save state of `EMULATOR_CORE`, default DeSmuME, with music playing) are set; `PAUSE_MUSIC_OUT`
  * receives `pause_music_<core>.wav`.
  */
@@ -37,9 +39,9 @@ class ShadowAudioCheckTest {
 
     @Test
     fun musicGoesOnDuringAPauseAndTheGameResumesInSync() {
-        val data = System.getenv("PAUSE_MUSIC_DATA")?.let(Path::of) ?: return
-        val rom = Path.of(System.getenv("POKEMON_ROM") ?: return)
-        val stateFile = Path.of(System.getenv("PAUSE_MUSIC_STATE") ?: return)
+        val data = gatedPath("PAUSE_MUSIC_DATA", "a data directory with cores/")
+        val rom = gatedPath("PAUSE_MUSIC_ROM", "a ROM to play and pause")
+        val stateFile = gatedPath("PAUSE_MUSIC_STATE", "a save state with music playing (dev/SaveStateProbe writes one)")
         val spec = LibretroCoreSpec.forRom(rom.toKotlinxPath(), System.getenv("EMULATOR_CORE"))
         val device = CaptureDevice()
         lateinit var audio: AudioPlayer
