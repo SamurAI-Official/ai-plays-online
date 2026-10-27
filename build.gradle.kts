@@ -78,6 +78,15 @@ compose.desktop {
 
 tasks.test {
     useJUnitPlatform()
+    // What did *not* run matters as much as what did: the ROM-gated tests skip (with what they wanted) when their
+    // environment is missing, and that has to be visible in a CI log, not only in the report — a green run that
+    // silently covered less than it looks like is how a real regression hides.
+    testLogging {
+        events("skipped", "failed")
+        // Failures come out in full (Gradle's log only *names* a skip: the reason — "PAUSE_MUSIC_ROM is not set…" —
+        // is in the report and in build/test-results/*.xml, where the sweep above reads it).
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
 
 // Development helper: runs any main class of the project, e.g.
