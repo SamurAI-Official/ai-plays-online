@@ -23,9 +23,10 @@ import kotlinx.serialization.json.JsonObject
 import me.nathanfallet.aiplayspokemon.agent.DecisionNarrator
 import me.nathanfallet.aiplayspokemon.agent.NarrationControl
 import me.nathanfallet.aiplayspokemon.agent.AgentPlayer
+import me.nathanfallet.aiplayspokemon.agent.AgentMemory
 import me.nathanfallet.aiplayspokemon.agent.ReaderMemory
-import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryData
-import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryStore
+import me.nathanfallet.aiplayspokemon.agent.SessionStore
+import me.nathanfallet.aiplayspokemon.agent.StoredSession
 import me.nathanfallet.aiplayspokemon.agent.ReaderPlayer
 import me.nathanfallet.aiplayspokemon.agent.PokemonPlayer
 import me.nathanfallet.aiplayspokemon.config.AppConfig
@@ -173,19 +174,22 @@ class AppController(
     private var lastVerificationWriteMillis = 0L
 
     /**
-     * What the reader player remembers of this game across sessions ([ReaderMemory]): its own note, what it tried on each
-     * screen, and the screens it has been on. Read from `<data>/readers/<id>.memory.json` when the game opens, written
-     * while it plays (at most every [MEMORY_WRITE_INTERVAL_MILLIS]) and once when the game closes.
+     * What the player remembers of this game, kept between sessions ([SessionStore], `<data>/sessions/<id>.json>`): the
+     * reader player's screens and what it tried where, the typed player's places, dialogues and explored map. Read when
+     * the game opens, written while it plays (at most every [MEMORY_WRITE_INTERVAL_MILLIS]) and once when it closes.
      */
     private var readerMemory: ReaderMemory? = null
+
+    /** The typed player's memory of this game, resumed the same way ([AgentMemory]). */
+    private var typedMemory: AgentMemory? = null
 
     /** When the player's memory was last written. */
     private var lastMemoryWriteMillis = 0L
 
-    private val _memory = MutableStateFlow<ReaderMemoryData?>(null)
+    private val _memory = MutableStateFlow<StoredSession?>(null)
 
-    /** What the player knows about this game ([ReaderMemoryData], the same shape as the file), for the panel. */
-    val memory: StateFlow<ReaderMemoryData?> = _memory.asStateFlow()
+    /** What was resumed of this game ([StoredSession], the same shape as the file), for the panel. */
+    val memory: StateFlow<StoredSession?> = _memory.asStateFlow()
 
     /**
      * The learner: a game with no reader teaches the app one while it is played (see [ReaderCalibrator]). It runs when
@@ -299,18 +303,24 @@ class AppController(
                 }
         }
         emulator.musicDuringPauses = _settings.value.musicDuringPausesSettings
-        // What the player already knows about this game is picked up where it left off: its own note, what it tried on
-        // each screen and the screens it has been on. A reader game is explored over many sessions, and this is what
-        // keeps a new launch from re-exploring the same menus (see agent/ReaderMemory.kt).
-        readerMemory = ReaderMemoryStore.of(profile.id, config.dataDirectory, romSha256)?.let { known ->
-            _memory.value = known
+        // What a previous session learned of this game is picked up where it stopped: the model's own note, the screens
+        // and what was tried where (the reader player), the places, dialogues and explored map (the typed player). A
+        // reader game is explored over many sessions, and this is what keeps a new launch from re-exploring the same
+        // menus (see agent/SessionStore.kt).
+        val stored = SessionStore.of(profile.id, config.dataDirectory, romSha256)
+        if (stored != null) {
+            _memory.value = stored
+            readerMemory = ReaderMemory.of(stored)
+            typedMemory = AgentMemory.of(stored)
             emulator.systemLog.add(
-                "resuming what the player knows about ${profile.title}: ${known.decisions} decisions, " +
-                    "${known.screens.size} screens" + (if (known.note != null) ", with its own note" else ""),
+                "resuming what the player knows about ${profile.title}: ${stored.decisions} decisions" +
+                    (if (stored.note != null) ", with its own note" else ""),
             )
-            println("ai-plays-online: resuming the player memory for ${profile.title} (${known.decisions} decisions)")
-            ReaderMemory.resume(known)
-        } ?: ReaderMemory()
+            println("ai-plays-online: resuming the player session for ${profile.title} (${stored.decisions} decisions)")
+        } else {
+            readerMemory = ReaderMemory()
+            typedMemory = AgentMemory()
+        }
         recorder?.let { r ->
             emulator.frameListener = r::onFrame
             emulator.humanInputListener = { r.humanInput(emulator.status.value.frameCount) }
@@ -513,6 +523,8 @@ class AppController(
                     runsDirectory = config.dataDirectory.resolve("runs"),
                     profile = profile,
                     walkthrough = walkthrough,
+                    memory = typedMemory ?: AgentMemory(),
+                    onMemory = { saveSession() },
                     narrator = { narrator() },
                 )
             }
@@ -528,7 +540,7 @@ class AppController(
                 walkthrough = walkthrough,
                 runsDirectory = config.dataDirectory.resolve("runs"),
                 memory = readerMemory ?: ReaderMemory(),
-                onMemory = { known -> saveReaderMemory(known) },
+                onMemory = { saveSession() },
                 narrator = { narrator() },
             )
             else -> null
@@ -633,28 +645,34 @@ class AppController(
     }
 
     /**
-     * Writes what the player knows now (the game is closing): the next session starts from it instead of exploring the
-     * same menus again. Harmless when nothing was decided, and when the player is not a reader player.
+     * Writes what the player learned now (the game is closing): the next session starts from it instead of exploring the
+     * same menus again. Harmless when nothing was played yet.
      */
-    fun saveMemoryOnClose() {
-        val memory = (_player.value as? ReaderPlayer)?.memory ?: readerMemory ?: return
-        if (memory.totalDecisions == 0) return
-        saveReaderMemory(memory, force = true)
-    }
+    fun saveMemoryOnClose() = saveSession(force = true)
 
     /**
-     * Writes the player's memory to `<data>/readers/<id>.memory.json` ([ReaderMemoryStore]), at most every
+     * Writes what the player learned of this game to `<data>/sessions/<id>.json` ([SessionStore]), at most every
      * [MEMORY_WRITE_INTERVAL_MILLIS] unless [force]. A write failure is printed and ignored: losing what the player
      * learned is not worth failing a game over, and it simply learns it again next time.
      */
-    private fun saveReaderMemory(memory: ReaderMemory, force: Boolean = false) {
+    private fun saveSession(force: Boolean = false) {
         val now = System.currentTimeMillis()
         if (!force && now - lastMemoryWriteMillis < MEMORY_WRITE_INTERVAL_MILLIS) return
         lastMemoryWriteMillis = now
-        val data = memory.toData(profile.id, romSha256)
-        runCatching { ReaderMemoryStore.write(data, config.dataDirectory) }
-            .onFailure { failure -> println("ai-plays-online: could not save the player memory: ${failure.message}") }
-        _memory.value = data
+        // Whichever player is in play writes its own memory into the session (they share the envelope, see SessionStore).
+        val session = when (val player = _player.value) {
+            is ReaderPlayer -> player.memory
+                .takeIf { it.totalDecisions > 0 }
+                ?.toSession(profile.id, romSha256)
+            is PokemonPlayer -> player.session
+                .takeIf { it.actionsDone > 0 }
+                ?.memory
+                ?.toSession(profile.id, romSha256, player.session.actionsDone)
+            else -> null
+        } ?: return
+        runCatching { SessionStore.write(session, config.dataDirectory) }
+            .onFailure { failure -> println("ai-plays-online: could not save the player session: ${failure.message}") }
+        _memory.value = session
     }
 
     /**

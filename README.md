@@ -180,6 +180,13 @@ written at all: a reader that ships with the app is never shadowed by a user cop
 over a 4,000-frame run: `2 of 2 screen values hold (267 looks, 50 screens)`, `screen at 0x023867c6: 49/50 screens held,
 agreement 0.99`. `dev/ReaderVerifyProbe` does the same for any ROM.
 
+**The typed player remembers too.** `agent/SessionStore` keeps one file per game (`<data>/sessions/<id>.json`) holding
+what any player learned of it: for the reader player the screens and what it tried where, for the typed (Pokémon) player
+the **places visited, dialogues read, the explored map (terrain, tiles walked, tiles refused and why) and where the story
+stood** — resumed at the next launch instead of thrown away with the process. The envelope every player shares carries
+how much was played, the model's own note, and the last decisions. The panel shows what the player remembers
+(`Remembers: 3 places visited, 412 tiles of 6 maps explored`).
+
 **The reader also plays the game.** `ReaderPlayer` is the same observe → decide → act loop as the Pokémon player, with
 the reader's values as its state and the console's own actions (press, hold, tap, wait) — so a game nobody wrote code
 for gets an AI that can see *and* act. Its sequences are **plans**: a step may say what it expects the game to show
@@ -187,7 +194,7 @@ for gets an AI that can see *and* act. Its sequences are **plans**: a step may s
 still moving, so a plan stops — reporting `not_done`/`not_done_code`, exactly like the typed chains — instead of
 pressing blindly into a screen it did not plan for. It also **remembers**: `agent/ReaderMemory` keeps the model's own
 note, what each action did on each screen (grouped and counted), and the screens it has been on, in
-`<data>/readers/<id>.memory.json` — fed back to the model as the prompt's `memory` block, so a new session starts
+`<data>/sessions/<id>.json` (one file per game, shared by every player) — fed back to the model as the prompt's `memory` block, so a new session starts
 knowing the game instead of re-exploring the same menus. That evidence is distilled into a **map of the screens**
 (`agent/ReaderAffordances`): which action leads where from here, which ones do nothing, and the shortest known way to the
 screen the reader aims at (`to_reach.actions`) — so a run that starts at the front end is told the presses that reach the

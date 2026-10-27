@@ -69,6 +69,9 @@ class ReaderPlayer(
 
     override var objective: String = profile.objective
 
+    /** What this player remembers of the game, in one line for the panel (null when it remembers nothing). */
+    override val memorySummary: String? get() = memory.summary
+
     /** A reader game has no typed actions to probe: what an action did is read from the observations instead. */
     private val inputProbe = InputProbe { _: Memory -> emptySet() }
 

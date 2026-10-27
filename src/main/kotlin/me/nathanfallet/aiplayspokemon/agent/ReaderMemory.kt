@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -15,36 +16,23 @@ import java.nio.file.Path
 import kotlin.io.path.isRegularFile
 
 /**
- * What the reader-based player remembers of a game, written down so the next session starts from it.
+ * What the reader-based player remembers of a game, in the shape it writes to a session ([SessionStore]): the screens it
+ * has been on and what it tried where. The rest of the session — the model's note, the decisions, the last lines — is
+ * the envelope every player shares ([StoredSession]).
  *
- * [ReaderPlayer] used to keep everything in memory only: its note was dropped the moment the game was closed, the
- * decisions it had made were gone, and a new launch re-explored the same menus. This is that memory as data, in
- * `<data>/readers/<id>.memory.json` (the `.memory` suffix keeps it from ever being read as a reader: [ReaderCatalog]
- * looks for `<id>.json` exactly).
- *
- * What is kept is what stays true across launches: the model's own note, what each action did on each screen (the
- * evidence behind "try this here"), the screens the player has been on with how many decisions it spent there, and the
- * last decisions as one line each. [romSha256] pins it to one ROM: a different revision shows different screens, so its
- * memory is discarded rather than mixed.
+ * The old file this used to be written to (`readers/<id>.memory.json`) is read by [SessionStore] as well, so nothing
+ * learned before is lost.
  */
-@Serializable
-data class ReaderMemoryData(
-    /** The game's profile id, which is also the reader's file name. */
-    val id: String,
-    /** SHA-256 of the ROM this memory came from (empty: written before the app checked). */
-    val romSha256: String = "",
-    val updatedAt: Long = 0,
-    /** Decisions taken over every session that wrote this memory. */
-    val decisions: Int = 0,
-    /** The model's own note (goal/plan), rewritten at will. */
-    val note: String? = null,
-    /** The last decisions, as the history line the prompt uses, oldest first. */
-    val history: List<String> = emptyList(),
-    /** Screens the player has been on, most time spent first. */
-    val screens: List<ScreenVisit> = emptyList(),
-    /** What one action did on one screen, and how often it was tried. */
-    val outcomes: List<Outcome> = emptyList(),
-) {
+object ReaderMemoryPayload {
+
+    /** The payload of a reader memory as the session file holds it. */
+    @Serializable
+    data class Data(
+        /** Screens the player has been on, most time spent first. */
+        val screens: List<ScreenVisit> = emptyList(),
+        /** What one action did on one screen, and how often it was tried. */
+        val outcomes: List<Outcome> = emptyList(),
+    )
 
     /** One screen the player has seen, and how much of the run went into it. */
     @Serializable
@@ -66,13 +54,13 @@ data class ReaderMemoryData(
         val destinations: Map<String, Int> = emptyMap(),
     )
 
-    /**
-     * True when this memory can be used for the ROM [romSha256] the app is playing: its own hash is the same, or it was
-     * written before the app checked ROMs (empty). A memory pinned to one revision is **not** used when the app does not
-     * know which revision it has (an empty [romSha256] asked about): better to learn the game again than to play it with
-     * another revision's screens.
-     */
-    fun matches(romSha256: String): Boolean = this.romSha256.isEmpty() || this.romSha256 == romSha256
+    /** The payload of [screens] and [outcomes], as a session holds it. */
+    fun encode(screens: List<ScreenVisit>, outcomes: List<Outcome>): JsonObject =
+        GamesFile.json.encodeToJsonElement(Data.serializer(), Data(screens = screens, outcomes = outcomes)).jsonObject
+
+    /** What a session's payload says, or nothing when it is not a reader memory (another player wrote it). */
+    fun decode(payload: JsonObject): Data =
+        runCatching { GamesFile.json.decodeFromJsonElement(Data.serializer(), payload) }.getOrDefault(Data())
 }
 
 /**
@@ -112,7 +100,7 @@ class ReaderMemory(
     private val screens = LinkedHashMap<String, Int>()
 
     /** What was tried where: `screen|action` → the outcome, most recently seen last. */
-    private val outcomes = LinkedHashMap<String, ReaderMemoryData.Outcome>()
+    private val outcomes = LinkedHashMap<String, ReaderMemoryPayload.Outcome>()
 
     private val history = ArrayDeque<String>()
 
@@ -120,8 +108,8 @@ class ReaderMemory(
     val totalDecisions: Int get() = earlierDecisions + decisions
 
     /** The screens seen so far, most time spent first. */
-    val screensVisited: List<ReaderMemoryData.ScreenVisit>
-        get() = screens.entries.sortedByDescending { it.value }.map { ReaderMemoryData.ScreenVisit(it.key, it.value) }
+    val screensVisited: List<ReaderMemoryPayload.ScreenVisit>
+        get() = screens.entries.sortedByDescending { it.value }.map { ReaderMemoryPayload.ScreenVisit(it.key, it.value) }
 
     /**
      * Records one **step** of a decision: what [action] did on the screen [before] shows, and where it left the game
@@ -137,7 +125,7 @@ class ReaderMemory(
         val destinations = previous?.destinations.orEmpty().let { known ->
             if (landed == null) known else known + (landed to (known[landed] ?: 0) + 1)
         }
-        outcomes[key] = ReaderMemoryData.Outcome(
+        outcomes[key] = ReaderMemoryPayload.Outcome(
             screen = screen,
             action = action,
             result = change,
@@ -233,16 +221,23 @@ class ReaderMemory(
     /** What the player knows about the game's screens, distilled from what it tried where ([ReaderAffordances]). */
     fun known(): ReaderAffordances.Known = ReaderAffordances.Known(outcomes.values.toList())
 
-    /** This memory as data, to be written down ([ReaderMemoryStore]). */
-    fun toData(id: String, romSha256: String): ReaderMemoryData = ReaderMemoryData(
+    /** How much of the game this memory knows, in one line (the panel shows it). */
+    val summary: String
+        get() = buildString {
+            append("$totalDecisions decisions over ${screens.size} screens")
+            if (outcomes.isNotEmpty()) append(", ${outcomes.size} things tried")
+            if (note != null) append(", with its own note")
+        }
+
+    /** This memory as a session to be written down ([SessionStore]): the envelope every player has, plus its payload. */
+    fun toSession(id: String, romSha256: String): StoredSession = StoredSession(
         id = id,
         romSha256 = romSha256,
         updatedAt = System.currentTimeMillis(),
         decisions = totalDecisions,
         note = note,
         history = (earlierHistory + history).takeLast(maxHistory),
-        screens = screensVisited,
-        outcomes = outcomes.values.toList(),
+        payload = ReaderMemoryPayload.encode(screensVisited, outcomes.values.toList()),
     )
 
     companion object {
@@ -251,12 +246,13 @@ class ReaderMemory(
          * A memory picked up from what a previous session wrote: the note, the screens it has been on, what it tried
          * where, and its last decisions — so the next session starts knowing the game instead of exploring it again.
          */
-        fun resume(data: ReaderMemoryData): ReaderMemory = ReaderMemory().also { memory ->
-            memory.note = data.note
-            memory.earlierDecisions = data.decisions
-            memory.earlierHistory = data.history
-            data.screens.forEach { visit -> memory.screens[visit.screen] = visit.decisions }
-            data.outcomes.forEach { outcome -> memory.outcomes["${outcome.screen}|${outcome.action}"] = outcome }
+        fun of(session: StoredSession): ReaderMemory = ReaderMemory().also { memory ->
+            val payload = ReaderMemoryPayload.decode(session.payload)
+            memory.note = session.note
+            memory.earlierDecisions = session.decisions
+            memory.earlierHistory = session.history
+            payload.screens.forEach { visit -> memory.screens[visit.screen] = visit.decisions }
+            payload.outcomes.forEach { outcome -> memory.outcomes["${outcome.screen}|${outcome.action}"] = outcome }
         }
 
         /** What [ReaderActions.describeChange] says when an action changed nothing. */
@@ -264,47 +260,5 @@ class ReaderMemory(
 
         /** How many outcomes elsewhere are worth telling the model about. */
         private const val WORTH_REMEMBERING = 12
-    }
-}
-
-/**
- * Where a [ReaderMemory] lives: `<data>/readers/<id>.memory.json`.
- *
- * The `.memory` suffix keeps it from ever being read as a reader ([ReaderCatalog] looks for `<id>.json` exactly), and
- * the file sits next to the reader it was played with — the reader says what the game *is*, the memory says what the
- * player has *found out* about it, and a reader is far more useful with both.
- */
-object ReaderMemoryStore {
-
-    private const val DIRECTORY = "readers"
-    private const val SUFFIX = ".memory.json"
-
-    /** The file a game's memory lives in. */
-    fun fileOf(id: String, dataDirectory: Path): Path = dataDirectory.resolve(DIRECTORY).resolve("$id$SUFFIX")
-
-    /**
-     * The memory of [id], or null when there is none — none yet, unreadable, or about another revision of the game than
-     * the [romSha256] being played ([ReaderMemoryData.matches]: a different revision shows different screens, so its
-     * memory would be about a game we are not playing).
-     */
-    fun of(id: String, dataDirectory: Path?, romSha256: String): ReaderMemoryData? {
-        val file = dataDirectory?.let { fileOf(id, it) } ?: return null
-        if (!file.isRegularFile()) return null
-        return runCatching { GamesFile.json.decodeFromString<ReaderMemoryData>(Files.readString(file)) }
-            .getOrNull()
-            ?.takeIf { it.matches(romSha256) }
-    }
-
-    /** Writes [memory] for its game, replacing the previous file. */
-    fun write(memory: ReaderMemoryData, dataDirectory: Path): Path {
-        val file = fileOf(memory.id, dataDirectory)
-        Files.createDirectories(file.parent)
-        Files.writeString(file, GamesFile.json.encodeToString(memory))
-        return file
-    }
-
-    /** Forgets a game's memory (the user started over, or the reader it was played with is gone). */
-    fun delete(id: String, dataDirectory: Path) {
-        runCatching { Files.deleteIfExists(fileOf(id, dataDirectory)) }
     }
 }

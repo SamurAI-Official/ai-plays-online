@@ -10,7 +10,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.nathanfallet.aiplayspokemon.agent.ReaderAffordances
 import me.nathanfallet.aiplayspokemon.agent.ReaderMemory
-import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryStore
+import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryPayload
+import me.nathanfallet.aiplayspokemon.agent.SessionStore
 import me.nathanfallet.aiplayspokemon.agent.ReaderPlayer
 import me.nathanfallet.aiplayspokemon.agent.PlayerSettings
 import me.nathanfallet.aiplayspokemon.config.AppConfig
@@ -48,7 +49,7 @@ import java.nio.file.Path
  * sees what the reader reads, playing the game.
  *
  * `--memory` uses the player's own memory of the game ([ReaderMemory]): what a previous run learned is resumed, and
- * what this one learns is written to `<data>/readers/<id>.memory.json` — run it twice to see the difference (the second
+ * what this one learns is written to `<data>/sessions/<id>.json` — run it twice to see the difference (the second
  * run starts knowing the screens, what it tried on them, and the note the model wrote for itself).
  */
 fun main(args: Array<String>) = runBlocking {
@@ -74,14 +75,15 @@ fun main(args: Array<String>) = runBlocking {
     // how the route through the menus can be shown for a game whose reader aims at a screen this run never reaches.
     val goalOverride = args.firstOrNull { it.startsWith("--goal=") }?.substringAfter("--goal=")
     val romSha256 = if (useMemory) sha256OfRom(Files.readAllBytes(rom)) else ""
-    val known = if (useMemory) ReaderMemoryStore.of(profile.id, config.dataDirectory, romSha256) else null
-    known?.let { memory ->
+    val known = if (useMemory) SessionStore.of(profile.id, config.dataDirectory, romSha256) else null
+    known?.let { session ->
+        val stored = ReaderMemoryPayload.decode(session.payload)
         println(
-            "memory: resuming ${memory.decisions} decisions over ${memory.screens.size} screens" +
-                (if (memory.note != null) ", with its own note: \"${memory.note}\"" else ""),
+            "memory: resuming ${session.decisions} decisions over ${stored.screens.size} screens" +
+                (if (session.note != null) ", with its own note: \"${session.note}\"" else ""),
         )
     }
-    val memory = known?.let(ReaderMemory::resume) ?: ReaderMemory()
+    val memory = known?.let(ReaderMemory::of) ?: ReaderMemory()
     val model: DecisionModel = if (args.any { it == "--model=llm" }) {
         val provider = config.llmProvider
         val modelId = config.llmModel(provider)
@@ -139,7 +141,7 @@ fun main(args: Array<String>) = runBlocking {
         println("affordances in the last request: $block")
     }
     if (useMemory) {
-        val file = ReaderMemoryStore.write(memory.toData(profile.id, romSha256), config.dataDirectory)
+        val file = SessionStore.write(memory.toSession(profile.id, romSha256), config.dataDirectory)
         println("memory: wrote $file (${memory.totalDecisions} decisions over ${memory.screensVisited.size} screens)")
         memory.screensVisited.take(6).forEach { visit -> println("memory:   ${visit.screen}: ${visit.decisions}") }
         println("memory: note now: ${memory.note ?: "none"}")

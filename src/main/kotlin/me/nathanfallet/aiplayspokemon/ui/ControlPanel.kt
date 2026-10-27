@@ -462,6 +462,8 @@ private fun ApiKeyForm(service: String, onSubmit: (String) -> Unit) {
 @Composable
 private fun PlayerSection(player: AgentPlayer) {
     val state by player.state.collectAsState()
+    // What this player remembers of the game, kept between sessions (read live, like everything else here).
+    val memorySummary = player.memorySummary
     var objective by remember(player) { mutableStateOf(player.objective) }
 
     Button(
@@ -492,6 +494,11 @@ private fun PlayerSection(player: AgentPlayer) {
         Text("Screen: $screen", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
     }
     state.note?.let { Text("Note: $it", style = MaterialTheme.typography.bodySmall) }
+    // What the player remembers of this game, kept between sessions (agent/SessionStore.kt): its own note, the screens
+    // and what it tried where (a reader game), or the places, dialogues and explored map (a typed game).
+    memorySummary?.let { known ->
+        Text("Remembers: $known", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     state.plannerGoal?.let { Text("Planner goal: $it", style = MaterialTheme.typography.bodySmall) }
     Milestones(state.milestones)
     state.lastDecision?.let { DecisionCard(it) }
@@ -897,17 +904,6 @@ private fun ReaderSection(controller: AppController) {
     }
     current.notes.takeIf { it.isNotBlank() }?.let { notes ->
         Text(notes, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-    // What the player has learned of this game over every session (agent/ReaderMemory.kt): its own note (shown in the
-    // player section), what it tried on each screen, and the screens it has been on.
-    memory?.let { known ->
-        Text(
-            "Player memory — ${known.decisions} decisions over ${known.screens.size} screens" +
-                (if (known.note != null) ", with its own note" else "") +
-                (if (known.outcomes.isNotEmpty()) ", ${known.outcomes.size} things tried" else "") + ".",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

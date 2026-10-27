@@ -54,10 +54,23 @@ class PokemonPlayer(
     private val profile: GameProfile = GameCatalog.generic,
     /** The walkthrough in play, shared with the panel (chapters, hints, which one we are on). */
     override val walkthrough: WalkthroughState = WalkthroughState(),
+    /**
+     * What a previous session learned of this game ([SessionStore], [AgentMemory.of]): the places, the dialogues, the map
+     * it explored, the tiles it was refused at and where the story stood. A fresh [AgentMemory] when this game has not
+     * been played before.
+     */
+    memory: AgentMemory = AgentMemory(),
+    /** Called after each decision, so the app can write down what this session learned ([SessionStore]). */
+    onMemory: (() -> Unit)? = null,
     /** The stream's voice for decisions (null: silent). Asked per use, so toggling needs no new player. */
     private val narrator: () -> DecisionNarrator? = { null },
 ) : AgentPlayer {
-    val session = AgentSession(emulator, game, recorder, settings, profile, walkthrough)
+
+    /** Everything the AI sees and acts with, including the memory it keeps between sessions. */
+    val session = AgentSession(emulator, game, recorder, settings, profile, walkthrough, memory, onMemory)
+
+    /** What this player remembers of the game, in one line for the panel (null when it remembers nothing). */
+    override val memorySummary: String? get() = session.memory.summary
     private var lastChapter: String? = null
     private val settings get() = session.settings()
     private val emulator = emulator

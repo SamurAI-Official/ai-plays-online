@@ -34,9 +34,15 @@ class AgentSession(
     val profile: GameProfile,
     /** The walkthrough in play (which chapter we are on), shared with the panel. */
     val walkthrough: WalkthroughState = WalkthroughState(),
+    /**
+     * What a previous session learned of this game ([SessionStore], [AgentMemory.of]): the places, the dialogues, the
+     * map it explored and where the story stood. A fresh [AgentMemory] when this game has not been played before.
+     */
+    val memory: AgentMemory = AgentMemory(),
+    /** Called after each [act], so the app can write down what this session learned ([SessionStore]). */
+    private val onMemory: (() -> Unit)? = null,
 ) {
     val gameSession = GameSession(host, game, recorder, options = { settings().agentOptions })
-    val memory = AgentMemory()
 
     /** Number of actions carried out. */
     var actionsDone = 0
@@ -150,6 +156,8 @@ class AgentSession(
             before = after
         }
         unread.keep(answer.outcome, answer.view)
+        // What the session learned is worth writing down as it goes: the next launch starts from it ([SessionStore]).
+        onMemory?.invoke()
         val chain = answer.chain
         return Report(answer.state, chain.performed, chain.failed?.second?.message, chain.stop?.message, chain.skipped.size)
     }

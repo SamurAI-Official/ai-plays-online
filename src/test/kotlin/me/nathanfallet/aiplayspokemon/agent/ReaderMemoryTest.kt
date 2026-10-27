@@ -36,7 +36,7 @@ class ReaderMemoryTest {
         memory.decision("press_a", "main menu (19)", "screen: main menu (19) → single player menu (18)")
         memory.decision("press_b", "main menu (19)", "nothing changed")
         memory.decision("press_a", "main menu (19)", "screen: main menu (19) → single player menu (18)")
-        val data = memory.toData("fake-game", "hash")
+        val data = ReaderMemoryPayload.decode(memory.toSession("fake-game", "hash").payload)
         assertEquals(2, data.outcomes.size, "the same action on the same screen is one outcome, counted")
         val press = data.outcomes.first { it.action == "press_a" }
         assertEquals(2, press.times)
@@ -83,7 +83,7 @@ class ReaderMemoryTest {
         val memory = ReaderMemory()
         memory.updateNote("goal: reach the mission briefing")
         memory.decision("press_a", "main menu (19)", "nothing changed")
-        assertEquals("goal: reach the mission briefing", memory.toData("fake-game", "hash").note)
+        assertEquals("goal: reach the mission briefing", memory.toSession("fake-game", "hash").note)
         assertEquals(
             "goal: reach the mission briefing",
             memory.describe(emptyMap())["your_note"]?.jsonPrimitive?.content,
@@ -98,7 +98,7 @@ class ReaderMemoryTest {
         val first = ReaderMemory()
         first.decision("press_a", "main menu (19)", "screen: main menu (19) → single player menu (18)")
         first.updateNote("press A twice, then hold right")
-        val resumed = ReaderMemory.resume(first.toData("fake-game", "hash"))
+        val resumed = ReaderMemory.of(first.toSession("fake-game", "hash"))
         assertEquals(1, resumed.totalDecisions, "the decisions of earlier sessions are still counted")
         assertEquals(0, resumed.decisions, "but none of them was taken in this session")
         val described = resumed.describe(mapOf("screen" to "main menu (19)"))
@@ -117,28 +117,31 @@ class ReaderMemoryTest {
     }
 
     @Test
-    fun itIsWrittenDownAndReadBackForOneRomOnly() {
+    fun itIsWrittenDownAndReadBack() {
         val directory = Files.createTempDirectory("reader-memory")
         val memory = ReaderMemory()
-        memory.decision("press_a", "main menu (19)", "nothing changed")
+        memory.decision(
+            "press_a",
+            "main menu (19)",
+            "screen: main menu (19) → single player menu (18)",
+            after = "single player menu (18)",
+        )
         memory.updateNote("note")
-        val file = ReaderMemoryStore.write(memory.toData("fake-game", "hash-of-this-rom"), directory)
-        assertEquals(directory.resolve("readers").resolve("fake-game.memory.json"), file, "next to the reader")
-        val read = assertNotNull(ReaderMemoryStore.of("fake-game", directory, "hash-of-this-rom"))
+        // The session store owns the file (one per game, shared with every player); the reader memory owns the payload.
+        val file = SessionStore.write(memory.toSession("fake-game", "hash-of-this-rom"), directory)
+        assertEquals(directory.resolve("sessions").resolve("fake-game.json"), file)
+        val read = assertNotNull(SessionStore.of("fake-game", directory, "hash-of-this-rom"))
         assertEquals(1, read.decisions)
         assertEquals("note", read.note)
-        // Another revision of the game shows other screens: its memory is not about the game being played.
-        assertNull(ReaderMemoryStore.of("fake-game", directory, "another-rom"))
-        // Nor is a memory pinned to a revision used when the app cannot say which one it has.
-        assertNull(ReaderMemoryStore.of("fake-game", directory, ""))
-        // A memory written before the app checked ROMs is still usable, and a game nobody played has none.
-        val unchecked = ReaderMemoryStore.fileOf("unchecked-game", directory)
-        unchecked.parent.toFile().mkdirs()
-        unchecked.toFile().writeText("""{"id":"unchecked-game","decisions":3}""")
-        assertEquals(3, assertNotNull(ReaderMemoryStore.of("unchecked-game", directory, "hash")).decisions)
-        assertNull(ReaderMemoryStore.of("another-game", directory, "hash-of-this-rom"))
-        ReaderMemoryStore.delete("fake-game", directory)
-        assertNull(ReaderMemoryStore.of("fake-game", directory, "hash-of-this-rom"))
+        // What it tried where comes back with it: the next session does not explore it again.
+        val resumed = ReaderMemory.of(read)
+        assertEquals(1, resumed.totalDecisions)
+        assertEquals(listOf("main menu (19)"), resumed.screensVisited.map { it.screen })
+        assertEquals(
+            "single player menu (18)",
+            resumed.known().moves.single().to,
+            "and the map of the game is picked up too",
+        )
         directory.toFile().deleteRecursively()
     }
 
@@ -171,7 +174,7 @@ class ReaderMemoryTest {
         repeat(12) { index ->
             memory.decision("press_a", "screen $index (0)", "screen $index (0) → screen ${index + 1} (1)")
         }
-        val data = memory.toData("fake-game", "hash")
+        val data = ReaderMemoryPayload.decode(memory.toSession("fake-game", "hash").payload)
         assertEquals(4, data.screens.size, "a game with a hundred menus must not grow the file without end")
         assertEquals(6, data.outcomes.size)
         memory.updateNote("x".repeat(100))

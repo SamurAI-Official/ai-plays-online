@@ -25,7 +25,7 @@ class ReaderAffordancesTest {
         vararg destinations: String,
         times: Int = 1,
         result: String = "screen: $screen → ${destinations.firstOrNull() ?: screen}",
-    ) = ReaderMemoryData.Outcome(
+    ) = ReaderMemoryPayload.Outcome(
         screen = screen,
         action = action,
         result = result,

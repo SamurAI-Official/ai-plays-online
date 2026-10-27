@@ -7,6 +7,7 @@ import dev.kotlinds.pokemonclient.state.GameState
 import dev.kotlinds.pokemonclient.state.MovementMode
 import dev.kotlinds.pokemonclient.state.Screen
 import dev.kotlinds.pokemonclient.state.TextSource
+import dev.kotlinds.pokemonclient.state.StoryStep
 import dev.kotlinds.pokemonclient.world.Area
 import dev.kotlinds.pokemonclient.world.TileInfo
 import dev.kotlinds.pokemonclient.world.TileKind
@@ -129,5 +130,58 @@ class AgentMemoryTest {
         assertEquals(listOf("y  0 .o.", "y  1 .V.", "y  2 ..."), rows)
         val blocked = explored["blocked_tiles"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("(1, 0): blocked by a person"), blocked)
+    }
+
+    @Test
+    fun `a session keeps the map, the places, the story and the note`() {
+        val memory = AgentMemory()
+        val floor = TileInfo(blocked = false, kind = TileKind.Floor)
+        val room = Area(1, "room", 0, 0, 3, 3, Array(9) { floor })
+        memory.record("press(up)", at(1, 1), at(1, 0), room)
+        memory.observeMap(at(1, 0).field, room)
+        memory.record("press(a)", at(1, 0), at(1, 0, screen = talking("Hello!")), room)
+        memory.noteBlocked(1, VisionVerifier.Point(0, 0), "blocked by wall (Wall)")
+        memory.observeStory(StoryGoalPlan(StoryStep("johto:badge_plain", "Reach the next town", 5), emptyList(), emptyList(), emptyList(), 2))
+        memory.updateNote("goal: reach the next town")
+        val decisions = 7
+
+        // Written down as a session (the envelope is shared with every other player, the payload is this player's), then
+        // picked up: an agent that already knows the walls it hit does not hit them again.
+        val session = memory.toSession("fake-game", "hash-of-this-rom", decisions)
+        assertEquals(decisions, session.decisions)
+        assertEquals("goal: reach the next town", session.note)
+        assertTrue(session.history.isEmpty(), "the typed player's situations are read live, so its action log is not kept")
+        val resumed = AgentMemory.of(session)
+
+        // The map came back: the terrain seen, the tile a step was refused at (with why), and the player where it stands.
+        val explored = resumed.describe(true, at(1, 0).field)["explored_map"]!!.jsonObject
+        assertEquals(listOf("y  0 xV.", "y  1 ...", "y  2 ..."), explored["rows"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("(0, 0): blocked by wall (Wall)"), explored["blocked_tiles"]!!.jsonArray.map { it.jsonPrimitive.content })
+        // The place, the dialogue read and the model's own note came back with it.
+        val described = resumed.describe(false, null)
+        assertEquals("goal: reach the next town", described["your_note"]!!.jsonPrimitive.content)
+        assertEquals(listOf("Hello!"), describeDialogues(resumed))
+        assertEquals("Town 1", described["places_visited"]!!.jsonArray.first().jsonObject["place"]!!.jsonPrimitive.content)
+        // And where the story stood.
+        assertEquals("Reach the next town", described["story"]!!.jsonObject["goal"]!!.jsonPrimitive.content)
+        assertEquals(2, described["story"]!!.jsonObject["steps_done"]!!.jsonPrimitive.int)
+        // What the panel shows of it.
+        assertTrue(resumed.summary.startsWith("1 places visited"), resumed.summary)
+        assertTrue("tiles of 1 maps explored" in resumed.summary, resumed.summary)
+    }
+
+    @Test
+    fun `a session from another player is not read as this one`() {
+        // A reader player's payload in the same envelope: nothing is read out of it, rather than something wrong.
+        val readerSession = StoredSession(
+            id = "fake-game",
+            payload = ReaderMemoryPayload.encode(
+                listOf(ReaderMemoryPayload.ScreenVisit("main menu (19)", 3)),
+                emptyList(),
+            ),
+        )
+        val resumed = AgentMemory.of(readerSession)
+        assertEquals("0 places visited", resumed.summary)
+        assertTrue(resumed.describe(true, at(1, 1).field)["explored_map"] == null)
     }
 }

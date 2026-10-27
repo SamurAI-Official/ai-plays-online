@@ -134,6 +134,96 @@ class AgentMemory(
         if (!value.isNullOrBlank()) note = value
     }
 
+    /** How much of the game this memory knows, in one line (the panel shows it). */
+    val summary: String
+        get() = buildString {
+            append("${places.size} places visited")
+            val tiles = explored.values.sumOf { it.size }
+            if (tiles > 0) append(", $tiles tiles of ${explored.size} maps explored")
+            val refused = blocked.values.sumOf { it.size }
+            if (refused > 0) append(", $refused tiles refused")
+            note?.let { append(", with its own note") }
+        }
+
+    /** What this memory knows, as a session's payload ([SessionStore]). */
+    fun toPayload(): TypedMemoryPayload = TypedMemoryPayload(
+        places = places.map { TypedMemoryPayload.Place(it.name, it.decisions) },
+        dialogues = dialogues.toList(),
+        // The maps the player knows most about first: a session that only has room for some keeps the useful ones.
+        maps = explored.entries
+            .sortedByDescending { it.value.size }
+            .take(MAX_MAPS)
+            .map { (id, tiles) -> mapKnowledge(id, tiles) },
+        story = TypedMemoryPayload.StoryKnowledge(
+            goal = storyGoal,
+            stepsDone = storyStepsDone,
+            alternatives = storyAlternatives.toList(),
+            blocked = storyBlocked.toList(),
+        ).takeIf { storyGoal != null || storyStepsDone > 0 || storyAlternatives.isNotEmpty() || storyBlocked.isNotEmpty() },
+    )
+
+    /** One map as a session holds it, bounded: a game with a hundred maps must not grow the file without end. */
+    private fun mapKnowledge(id: Int, tiles: Map<Pair<Int, Int>, Char>): TypedMemoryPayload.MapKnowledge =
+        TypedMemoryPayload.MapKnowledge(
+            id = id,
+            location = mapNames[id]?.location,
+            map = mapNames[id]?.map,
+            explored = tiles.entries.take(MAX_TILES_PER_MAP).associate { (tile, symbol) -> key(tile) to symbol.toString() },
+            walked = walked[id].orEmpty().take(MAX_TILES_PER_MAP).map(::key),
+            blocked = blocked[id].orEmpty().entries.take(maxBlocked).associate { (tile, reason) -> key(tile) to reason },
+        )
+
+    /**
+     * Picks up what a previous session knew ([SessionStore]): where it has been, what it read, the map it explored and
+     * where the story stood. Everything is re-derived at the next observation anyway, so nothing here can go stale in a
+     * way that misleads: the map is terrain, and the terrain does not change.
+     */
+    fun restore(payload: TypedMemoryPayload) {
+        payload.places.forEach { place -> places.addBounded(Place(place.name, place.decisions), maxPlaces) }
+        payload.dialogues.forEach { line -> dialogues.addBounded(line, maxDialogues) }
+        payload.maps.forEach { known ->
+            known.location?.let { location -> mapNames[known.id] = MapName(known.id, location, known.map) }
+            known.explored.forEach { (tile, symbol) ->
+                val at = point(tile) ?: return@forEach
+                symbol.firstOrNull()?.let { explored.getOrPut(known.id) { HashMap() }[at] = it }
+            }
+            walked.getOrPut(known.id) { HashSet() }.addAll(known.walked.mapNotNull(::point))
+            blocked.getOrPut(known.id) { LinkedHashMap() }.putAll(known.blocked.mapNotNull { (tile, reason) -> point(tile)?.let { it to reason } })
+        }
+        payload.story?.let { story ->
+            storyGoal = story.goal
+            storyStepsDone = story.stepsDone
+            storyAlternatives.clear()
+            storyAlternatives.addAll(story.alternatives)
+            storyBlocked.clear()
+            storyBlocked.addAll(story.blocked)
+        }
+    }
+
+    /** A tile as a session holds it: `(5, 6)` → `"5,6"`. */
+    private fun key(tile: Pair<Int, Int>): String = "${tile.first},${tile.second}"
+
+    /** A tile as a session holds it back: `"5,6"` → `(5, 6)`, or null when the text is not one. */
+    private fun point(text: String): Pair<Int, Int>? {
+        val parts = text.split(',')
+        val x = parts.getOrNull(0)?.toIntOrNull() ?: return null
+        val y = parts.getOrNull(1)?.toIntOrNull() ?: return null
+        return x to y
+    }
+
+    /** This memory as a session to be written down ([SessionStore]): the envelope every player has, plus its payload. */
+    fun toSession(id: String, romSha256: String, decisions: Int): StoredSession = StoredSession(
+        id = id,
+        romSha256 = romSha256,
+        updatedAt = System.currentTimeMillis(),
+        decisions = decisions,
+        note = note,
+        // The typed player's decisions are about situations (map, tile, screen, cursor), which are read live at the next
+        // launch: what is worth carrying over is the knowledge, not the lines of the last run.
+        history = emptyList(),
+        payload = TypedMemoryPayload.encode(toPayload()),
+    )
+
     /** The memory part of the state sent to the model ([current]: where the player stands, for the explored map). */
     fun describe(includeExploredMap: Boolean, current: FieldState?): JsonObject = buildJsonObject {
         put("recent_actions", JsonArray(actions.map { step ->
@@ -281,11 +371,27 @@ class AgentMemory(
     private class Step(val action: String, val changes: String, val timesInSituation: Int, var times: Int = 1)
     private class Place(val name: String, var decisions: Int = 1)
 
-    private companion object {
-        const val MAX_EXPLORED_HALF_WIDTH = 20
-        const val MAX_EXPLORED_HALF_HEIGHT = 15
-        const val WALKED = 'o'
-        const val BLOCKED = 'x'
-        const val UNSEEN = ' '
+    companion object {
+
+        /**
+         * A memory picked up from what a previous session learned ([SessionStore]): the places, the dialogues, the map
+         * it explored, the tiles it was refused at and where the story stood — plus the model's own note.
+         */
+        fun of(session: StoredSession): AgentMemory = AgentMemory().also { memory ->
+            memory.restore(TypedMemoryPayload.decode(session.payload))
+            memory.updateNote(session.note)
+        }
+
+        private const val MAX_EXPLORED_HALF_WIDTH = 20
+        private const val MAX_EXPLORED_HALF_HEIGHT = 15
+        private const val WALKED = 'o'
+        private const val BLOCKED = 'x'
+        private const val UNSEEN = ' '
+
+        /** Most maps a session keeps: the ones the player knows most about (see [toPayload]). */
+        private const val MAX_MAPS = 24
+
+        /** Most tiles per map a session keeps, so a long run cannot grow the file without end. */
+        private const val MAX_TILES_PER_MAP = 5_000
     }
 }

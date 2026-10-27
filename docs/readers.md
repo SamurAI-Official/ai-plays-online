@@ -323,9 +323,14 @@ keeps instead — **facts and the model's own words, never advice**, like the Po
 - the screens it has been on, with how many decisions went into each;
 - its last decisions, so a new session is not blind.
 
-It lives in `<data>/readers/<id>.memory.json`, next to the reader it was played with, and is pinned to one ROM revision
-(another revision shows other screens, so its memory is discarded). It is bounded (40 screens, 120 outcomes, a 600
-character note) and written while playing — at most every 10 s — and once when the game closes.
+It lives in `<data>/sessions/<id>.json` — the store every player shares ([`SessionStore`](../src/main/kotlin/me/nathanfallet/aiplayspokemon/agent/SessionStore.kt)):
+one file per game, holding the envelope every player has (how much was played, the model's own note, the last decisions)
+and the payload the player that wrote it knows. The reader player's payload is its screens and what it tried where; the
+typed player's is its places, dialogues and explored map, so switching between the two loops does not mean learning the
+same game twice. It is pinned to one ROM revision (another revision shows other screens, so its memory is discarded),
+bounded (40 screens, 120 outcomes, a 600 character note) and written while playing — at most every 10 s — and once when
+the game closes. A memory the app used to write next to the reader (`readers/<id>.memory.json`) is read as well, so
+nothing learned before the store existed is lost.
 
 The model is told all of this in the prompt's `memory` block, which is where it stops re-exploring: what an earlier
 session found out is in the request, not just on disk.
@@ -351,7 +356,7 @@ Run the probe with `--memory` twice and the second run starts knowing the game:
   -PdevArgs="game.nds|6|desmume|--memory"    # run 2: resumes them
 # memory: resuming 14 decisions over 6 screens, with its own note: "my note: press A through the menus…"
 # memory in the last request: {…"decisions_taken_so_far":20,"note_about_that":"you played this game before…"…}
-# memory: wrote …/readers/age-of-empires-aok.memory.json (20 decisions over 6 screens)
+# memory: wrote …/sessions/age-of-empires-aok.json (20 decisions over 6 screens)
 ```
 
 ### What a plan is allowed to assume

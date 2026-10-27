@@ -35,7 +35,7 @@ object ReaderAffordances {
      * screen where it was is not a move: it is what [Screen.deadEnds] or the reader's own change tells), and a path is a
      * breadth-first walk over them — the shortest known way, or nothing when there is none.
      */
-    class Known(private val outcomes: List<ReaderMemoryData.Outcome>, private val maxSteps: Int = MAX_PATH) {
+    class Known(private val outcomes: List<ReaderMemoryPayload.Outcome>, private val maxSteps: Int = MAX_PATH) {
 
         /** Every known transition, most proven first: one entry per destination an action reached. */
         val moves: List<Move> = outcomes
@@ -87,8 +87,8 @@ object ReaderAffordances {
         }
     }
 
-    /** The map of what [memory] recorded. */
-    fun of(memory: ReaderMemoryData): Known = Known(memory.outcomes)
+    /** The map a stored session describes, or an empty one when another player wrote it ([SessionStore]). */
+    fun of(session: StoredSession): Known = Known(ReaderMemoryPayload.decode(session.payload).outcomes)
 
     /**
      * The screen the reader's own progress signals aim at: a signal about the `screen` value (a `kind: memory` chapter

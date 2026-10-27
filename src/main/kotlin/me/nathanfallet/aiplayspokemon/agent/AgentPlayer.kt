@@ -25,6 +25,13 @@ interface AgentPlayer {
     /** What the player is trying to achieve; editable at any time from the panel. */
     var objective: String
 
+    /**
+     * What this player remembers of the game it is playing, in one line for the panel, or null when it remembers nothing
+     * (a game it has just met). Every player keeps its own memory ([AgentMemory], [ReaderMemory]); this is how the panel
+     * shows it without knowing which one it is.
+     */
+    val memorySummary: String?
+
     /** Starts (or restarts) playing. */
     fun play()
 
