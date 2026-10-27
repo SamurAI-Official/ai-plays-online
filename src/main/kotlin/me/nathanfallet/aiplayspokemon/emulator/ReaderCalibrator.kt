@@ -155,10 +155,14 @@ class ReaderCalibrator(
     /** Printable text found in the current part of memory, tracked within it (see [findText]). */
     private var textRuns = mutableMapOf<Int, TextRun>()
 
-    /** The counters found in the parts already examined, best per address. */
+    /**
+     * The counters found in the parts already examined, best per address. Not part of the evidence written down
+     * between sessions: the *reader* is what survives (a later session finds them again when it re-examines a part,
+     * and [ReaderMerge] keeps what the reader already has).
+     */
     private val foundCounters = mutableMapOf<Long, Counter>()
 
-    /** The text runs found in the parts already examined, best per address. */
+    /** The text runs found in the parts already examined, best per address (see [foundCounters] about sessions). */
     private val foundText = mutableMapOf<Long, TextRun>()
 
     /** Addresses that proved volatile (many values on one screen): not screen signals, and not worth remembering. */
