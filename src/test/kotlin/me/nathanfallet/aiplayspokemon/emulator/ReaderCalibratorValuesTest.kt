@@ -64,6 +64,18 @@ class ReaderCalibratorValuesTest {
     private fun Observation.at(offset: Int) = address == RamProbe.MAIN_RAM_START + offset
 
     @Test
+    fun thePanelReadyFlagAgreesWithWhatWouldBeWritten() {
+        // A run can end with unverified addresses separating more screens than the proven ones: the panel must not say
+        // "not ready" while a reader is written, nor "ready" when nothing would be.
+        val game = FakeGame()
+        val calibrator = calibrator()
+        repeat(60) {
+            game.looks(1, calibrator)
+            assertEquals(calibrator.isReady(), calibrator.progress().ready, "after ${it + 1} looks")
+        }
+    }
+
+    @Test
     fun aValueThatOnlyGoesOneWayIsProposedAsACounter() {
         val counters = observations().filter { it.type == ValueType.U16 || it.type == ValueType.U32 }
         val gold = counters.firstOrNull { it.at(8) }

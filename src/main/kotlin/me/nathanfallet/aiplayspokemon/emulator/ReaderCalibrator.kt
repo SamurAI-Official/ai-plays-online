@@ -669,7 +669,7 @@ class ReaderCalibrator(
         }.sortedWith(compareByDescending<Signal> { it.consistency }.thenByDescending { it.distinct })
 
     /** True when there is enough evidence to write a reader for this game. */
-    fun isReady(): Boolean = samples >= minSamples && screens.size >= minScreens && proven().isNotEmpty()
+    fun isReady(): Boolean = readyWith(proven())
 
     /**
      * The signals that have been **checked since they were found** and never once contradicted a screen, and that were
@@ -788,11 +788,16 @@ class ReaderCalibrator(
             candidates = candidates.size,
             bestValues = best?.distinct ?: 0,
             bestConsistency = best?.consistency ?: 0.0,
-            ready = samples >= minSamples && screens.size >= minScreens && candidates.any {
-                it.distinct >= minDistinct && it.verified >= minVerified && it.revisits >= minRevisits
-            },
+            // "Ready" means exactly what the app means by it (see [isReady]): a signal it would write. Asking the top
+            // candidates instead would report "not ready" while a reader is being written, or the other way round,
+            // because a run can end with unverified addresses separating more screens than the proven ones.
+            ready = readyWith(proven()),
         )
     }
+
+    /** True when there is enough evidence to write a reader: enough looks, enough screens, and a proven signal. */
+    private fun readyWith(proven: List<Signal>): Boolean =
+        samples >= minSamples && screens.size >= minScreens && proven.isNotEmpty()
 
     private companion object {
         /** Values a draft keeps: a handful, not a memory dump (screen signals first, then counters, then text). */
