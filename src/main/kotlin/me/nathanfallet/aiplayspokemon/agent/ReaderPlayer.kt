@@ -43,6 +43,14 @@ class ReaderPlayer(
     private val settings: () -> PlayerSettings,
     override val walkthrough: WalkthroughState = WalkthroughState(),
     runsDirectory: Path? = null,
+    /**
+     * What this player remembers of the game — its own note, what it tried where, the screens it has been on
+     * ([ReaderMemory]). Pass a memory picked up from a file ([ReaderMemory.resume]) and the session starts from what
+     * earlier ones found out instead of exploring the same menus again.
+     */
+    val memory: ReaderMemory = ReaderMemory(),
+    /** Called after each decision, so the app can write the memory down (a few seconds apart at most). */
+    private val onMemory: ((ReaderMemory) -> Unit)? = null,
     /** The stream's voice for decisions (null: silent). Asked per use, so toggling needs no new player. */
     private val narrator: () -> DecisionNarrator? = { null },
 ) : AgentPlayer {
@@ -56,7 +64,7 @@ class ReaderPlayer(
     /** The hash of each screen as the previous action left it: what this action's change is measured against. */
     private val lastSeenHashes = mutableMapOf<Screens.Screen, Long>()
 
-    private val _state = MutableStateFlow(PlayerState())
+    private val _state = MutableStateFlow(PlayerState(note = memory.note))
     override val state: StateFlow<PlayerState> = _state.asStateFlow()
 
     override var objective: String = profile.objective
@@ -113,6 +121,7 @@ class ReaderPlayer(
                     lastChange = lastChange,
                     history = history.toList(),
                     stagnation = stagnation,
+                    memory = memory.describe(before),
                 ),
                 instructions = ReaderPrompt.instructions(profile, chapter, model.generative),
                 options = ReaderActions.options(),
@@ -171,6 +180,16 @@ class ReaderPlayer(
             )
             history += ReaderPrompt.historyLine(decision.number, lastAction, change, summary)
             while (history.size > ReaderPrompt.HISTORY_SIZE) history.removeFirst()
+            // What this decision taught the player, kept beyond this session: what it tried where, the screens it has
+            // been on, and the model's own note (which the next session picks up again).
+            memory.record(
+                action = lastAction,
+                before = before,
+                change = change,
+                historyLine = history.last(),
+            )
+            memory.updateNote(result.note)
+            onMemory?.invoke(memory)
             narrator()?.narrateDecision(decision)
 
             _state.update {

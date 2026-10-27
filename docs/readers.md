@@ -305,6 +305,49 @@ press a button, hold a direction, tap the touch screen, wait). The model is told
 the reader's values, and — after each action — **what changed** (`screen: 19 → 18`), plus a `stuck` note once actions
 stop changing anything. Nothing in it is game-specific: another calibrated reader, another game.
 
+### What it remembers between sessions
+
+A reader game is explored over many sessions, and the player used to start from nothing every launch: its note was
+dropped when the game closed, and it re-explored the same menus. `ReaderMemory` (`agent/ReaderMemory.kt`) is what it
+keeps instead — **facts and the model's own words, never advice**, like the Pokémon player's `AgentMemory`:
+
+- the model's own note (`your_note`), rewritten by the model whenever it wants;
+- what each action did on each screen, grouped and counted (`press_a` on `main menu (19)`: `→ single player menu (18)`,
+  tried 3 times) — including the ones that did nothing, which is what a dead end looks like;
+- the screens it has been on, with how many decisions went into each;
+- its last decisions, so a new session is not blind.
+
+It lives in `<data>/readers/<id>.memory.json`, next to the reader it was played with, and is pinned to one ROM revision
+(another revision shows other screens, so its memory is discarded). It is bounded (40 screens, 120 outcomes, a 600
+character note) and written while playing — at most every 10 s — and once when the game closes.
+
+The model is told all of this in the prompt's `memory` block, which is where it stops re-exploring: what an earlier
+session found out is in the request, not just on disk.
+
+```json
+"memory": {
+  "your_note": "my note: press A through the menus, then hold right in a mission",
+  "decisions_taken_so_far": 20,
+  "note_about_that": "you played this game before, in earlier sessions: 14 of those decisions were not in this one…",
+  "screens_you_have_seen": [{ "screen": "main menu (19)", "decisions_spent": 3 }, { "screen": "boot (0)", "decisions_spent": 6 }],
+  "what_you_tried_here": [{ "action": "press_a", "what_it_did": "screen: main menu (19) → single player menu (18)", "times_tried": 3 }],
+  "what_worked_elsewhere": ["single player menu (18): press_a → screen: single player menu (18) → select campaign (64)"],
+  "your_last_decisions_before_this_session": ["#13 press_a → screen: main menu (19) → single player menu (18) (was: …)"]
+}
+```
+
+Run the probe with `--memory` twice and the second run starts knowing the game:
+
+```bash
+./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.ReaderPlayProbeKt \
+  -PdevArgs="game.nds|14|desmume|--memory"   # run 1: learns 6 screens, writes the memory
+./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.ReaderPlayProbeKt \
+  -PdevArgs="game.nds|6|desmume|--memory"    # run 2: resumes them
+# memory: resuming 14 decisions over 6 screens, with its own note: "my note: press A through the menus…"
+# memory in the last request: {…"decisions_taken_so_far":20,"note_about_that":"you played this game before…"…}
+# memory: wrote …/readers/age-of-empires-aok.memory.json (20 decisions over 6 screens)
+```
+
 What it is not: it cannot read the picture by itself, so `ScreenState` gives it what the app *can* say — whether the
 picture changed while it acted, how long it has been still (a still picture is a game waiting for input), which
 walkthrough landmark it matches, and, when the model has vision, its own one-line reading of the screenshot

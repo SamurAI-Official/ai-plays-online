@@ -25,7 +25,9 @@ object ReaderPrompt {
     /**
      * The state of the request: the game, the objective, the chapter, the reader's values, the last action with what
      * it changed, and the recent history. [stagnation] counts the actions that changed nothing, so the model is told
-     * when it is stuck instead of repeating itself.
+     * when it is stuck instead of repeating itself. [memory] is the player's own memory of this game
+     * ([ReaderMemory.describe]): its note, what it already tried on this screen, and the screens it has been on —
+     * including the ones from earlier sessions.
      */
     fun state(
         profile: GameProfile,
@@ -37,12 +39,14 @@ object ReaderPrompt {
         lastChange: String?,
         history: List<String>,
         stagnation: Int,
+        memory: JsonObject? = null,
     ): JsonObject = buildJsonObject {
         put("game", profile.title)
         put("objective", objective)
         putJsonObject("reader") {
             for ((name, value) in values) put(name, value)
         }
+        memory?.let { put("memory", it) }
         screen?.let { view ->
             putJsonObject("screen") {
                 putJsonObject("top") { putScreenView(view.top) }
@@ -94,6 +98,10 @@ object ReaderPrompt {
     fun instructions(profile: GameProfile, chapter: WalkthroughChapter?, generative: Boolean): String = buildString {
         append("You are playing ${profile.shortTitle} on a Nintendo DS. ")
         append("`reader` is what a calibrated memory reader sees (its `screen` value is which screen the game is on). ")
+        append("`memory` is your own memory of this game, kept between sessions: `your_note` is what you wrote for ")
+        append("yourself, `what_you_tried_here` is what each action already did on this screen, and ")
+        append("`screens_you_have_seen` is where you have been. Read it before deciding: it says what you already ")
+        append("know, so you do not explore the same menus again. ")
         append("`screen` is what the picture shows and how it is moving: use it — a dialogue box wants A, a menu wants ")
         append("the D-pad, a stable picture means the game is waiting for you, and a picture that keeps changing is ")
         append("loading or animating. `screen.looks_like` is a reading of the picture, and like the walkthrough it can ")

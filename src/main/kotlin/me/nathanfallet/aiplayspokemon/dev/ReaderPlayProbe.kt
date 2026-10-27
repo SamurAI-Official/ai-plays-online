@@ -8,6 +8,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.nathanfallet.aiplayspokemon.agent.ReaderMemory
+import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryStore
 import me.nathanfallet.aiplayspokemon.agent.ReaderPlayer
 import me.nathanfallet.aiplayspokemon.agent.PlayerSettings
 import me.nathanfallet.aiplayspokemon.config.AppConfig
@@ -19,6 +21,8 @@ import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
+import me.nathanfallet.aiplayspokemon.sha256OfRom
+import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -39,9 +43,13 @@ import java.nio.file.Path
  * plays with a scripted policy, `llm` asks the app's configured model (the environment the launcher sets:
  * `LLM_PROVIDER`, `LLM_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which is the real thing: a model that only ever
  * sees what the reader reads, playing the game.
+ *
+ * `--memory` uses the player's own memory of the game ([ReaderMemory]): what a previous run learned is resumed, and
+ * what this one learns is written to `<data>/readers/<id>.memory.json` — run it twice to see the difference (the second
+ * run starts knowing the screens, what it tried on them, and the note the model wrote for itself).
  */
 fun main(args: Array<String>) = runBlocking {
-    val rom = Path.of(args.firstOrNull() ?: error("usage: <rom.nds> [decisions] [core] [--model=route|llm]"))
+    val rom = Path.of(args.firstOrNull() ?: error("usage: <rom.nds> [decisions] [core] [--model=route|llm] [--memory]"))
     val decisions = args.getOrNull(1)?.toIntOrNull() ?: 12
     val core = args.getOrNull(2) ?: "desmume"
     val config = AppConfig.load(emptyArray())
@@ -57,6 +65,17 @@ fun main(args: Array<String>) = runBlocking {
         config.dataDirectory,
     )
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // --memory: pick up what a previous run learned about this game, and write down what this one learns.
+    val useMemory = args.any { it == "--memory" }
+    val romSha256 = if (useMemory) sha256OfRom(Files.readAllBytes(rom)) else ""
+    val known = if (useMemory) ReaderMemoryStore.of(profile.id, config.dataDirectory, romSha256) else null
+    known?.let { memory ->
+        println(
+            "memory: resuming ${memory.decisions} decisions over ${memory.screens.size} screens" +
+                (if (memory.note != null) ", with its own note: \"${memory.note}\"" else ""),
+        )
+    }
+    val memory = known?.let(ReaderMemory::resume) ?: ReaderMemory()
     val model: DecisionModel = if (args.any { it == "--model=llm" }) {
         val provider = config.llmProvider
         val modelId = config.llmModel(provider)
@@ -79,6 +98,7 @@ fun main(args: Array<String>) = runBlocking {
         scope = scope,
         settings = { PlayerSettings() },
         walkthrough = me.nathanfallet.aiplayspokemon.games.WalkthroughState(),
+        memory = memory,
     )
 
     println("== reader play probe: ${profile.title}, $decisions decisions on $core ==")
@@ -102,6 +122,15 @@ fun main(args: Array<String>) = runBlocking {
     val reached = inMission?.let { signal -> emulator.observe { memory -> signal.reached(memory) } }
     println("decisions: ${player.state.value.decisions}, error: ${player.state.value.error ?: "none"}")
     println("progress signal 'in-mission': $reached")
+    // The `memory` block of the last request is what the model was told about its own past: proof that what an earlier
+    // run learned is in the prompt, and not only on disk.
+    player.state.value.lastRequestState?.get("memory")?.let { block -> println("memory in the last request: $block") }
+    if (useMemory) {
+        val file = ReaderMemoryStore.write(memory.toData(profile.id, romSha256), config.dataDirectory)
+        println("memory: wrote $file (${memory.totalDecisions} decisions over ${memory.screensVisited.size} screens)")
+        memory.screensVisited.take(6).forEach { visit -> println("memory:   ${visit.screen}: ${visit.decisions}") }
+        println("memory: note now: ${memory.note ?: "none"}")
+    }
     emulator.systemLog.entries.value.filter { it.contains("screen read") }.takeLast(3).forEach { println("log: $it") }
     emulator.close()
     scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
@@ -111,11 +140,15 @@ fun main(args: Array<String>) = runBlocking {
 /**
  * A model that plays by the reader: `screen` says which screen is up, so press A while a menu is up, and otherwise
  * wait for the game to get on with it. This is the scripted stand-in for an LLM, and it is deliberately dumb.
+ *
+ * It also writes itself a note on its first decision, like a model with `modelNotes` on does: that is what proves the
+ * note survives a session (the next run's memory block carries it back).
  */
 private class RouteModel : DecisionModel {
 
     override val name: String = "route (scripted)"
     override val generative: Boolean = false
+    private var decisions = 0
 
     override suspend fun choose(request: ChoiceRequest): ChoiceResult {
         val screen = request.state["reader"]?.jsonObject?.get("screen")?.jsonPrimitive?.content.orEmpty()
@@ -128,11 +161,13 @@ private class RouteModel : DecisionModel {
             screen.contains("in mission") -> "hold_right"
             else -> "wait"
         }
+        val note = if (decisions++ == 0) "my note: press A through the menus, then hold right in a mission" else null
         return ChoiceResult(
             choice = option,
             probabilities = mapOf(option to 1.0),
             confidence = 1.0,
             model = name,
+            note = note,
             inputTokens = 0,
         )
     }

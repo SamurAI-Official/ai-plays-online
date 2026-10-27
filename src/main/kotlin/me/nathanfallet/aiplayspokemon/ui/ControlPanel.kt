@@ -841,6 +841,7 @@ private fun ReaderSection(controller: AppController) {
     val values by controller.readerValues.collectAsState()
     val learning by controller.learning.collectAsState()
     val verification by controller.verification.collectAsState()
+    val memory by controller.memory.collectAsState()
     learning?.let { progress ->
         // No reader yet: the app is learning one while the game is played (see emulator/ReaderCalibrator.kt).
         HorizontalDivider()
@@ -895,6 +896,17 @@ private fun ReaderSection(controller: AppController) {
     }
     current.notes.takeIf { it.isNotBlank() }?.let { notes ->
         Text(notes, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    // What the player has learned of this game over every session (agent/ReaderMemory.kt): its own note (shown in the
+    // player section), what it tried on each screen, and the screens it has been on.
+    memory?.let { known ->
+        Text(
+            "Player memory — ${known.decisions} decisions over ${known.screens.size} screens" +
+                (if (known.note != null) ", with its own note" else "") +
+                (if (known.outcomes.isNotEmpty()) ", ${known.outcomes.size} things tried" else "") + ".",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

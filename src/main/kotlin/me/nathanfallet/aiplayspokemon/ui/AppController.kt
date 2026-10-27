@@ -23,6 +23,9 @@ import kotlinx.serialization.json.JsonObject
 import me.nathanfallet.aiplayspokemon.agent.DecisionNarrator
 import me.nathanfallet.aiplayspokemon.agent.NarrationControl
 import me.nathanfallet.aiplayspokemon.agent.AgentPlayer
+import me.nathanfallet.aiplayspokemon.agent.ReaderMemory
+import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryData
+import me.nathanfallet.aiplayspokemon.agent.ReaderMemoryStore
 import me.nathanfallet.aiplayspokemon.agent.ReaderPlayer
 import me.nathanfallet.aiplayspokemon.agent.PokemonPlayer
 import me.nathanfallet.aiplayspokemon.config.AppConfig
@@ -170,6 +173,21 @@ class AppController(
     private var lastVerificationWriteMillis = 0L
 
     /**
+     * What the reader player remembers of this game across sessions ([ReaderMemory]): its own note, what it tried on each
+     * screen, and the screens it has been on. Read from `<data>/readers/<id>.memory.json` when the game opens, written
+     * while it plays (at most every [MEMORY_WRITE_INTERVAL_MILLIS]) and once when the game closes.
+     */
+    private var readerMemory: ReaderMemory? = null
+
+    /** When the player's memory was last written. */
+    private var lastMemoryWriteMillis = 0L
+
+    private val _memory = MutableStateFlow<ReaderMemoryData?>(null)
+
+    /** What the player knows about this game ([ReaderMemoryData], the same shape as the file), for the panel. */
+    val memory: StateFlow<ReaderMemoryData?> = _memory.asStateFlow()
+
+    /**
      * The learner: a game with no reader teaches the app one while it is played (see [ReaderCalibrator]). It runs when
      * the game has no reader at all, **and** keeps running for a reader the app learned itself (a `learned while
      * playing` one): a later session extends that draft instead of freezing it. A reader somebody wrote (shipped,
@@ -281,6 +299,18 @@ class AppController(
                 }
         }
         emulator.musicDuringPauses = _settings.value.musicDuringPausesSettings
+        // What the player already knows about this game is picked up where it left off: its own note, what it tried on
+        // each screen and the screens it has been on. A reader game is explored over many sessions, and this is what
+        // keeps a new launch from re-exploring the same menus (see agent/ReaderMemory.kt).
+        readerMemory = ReaderMemoryStore.of(profile.id, config.dataDirectory, romSha256)?.let { known ->
+            _memory.value = known
+            emulator.systemLog.add(
+                "resuming what the player knows about ${profile.title}: ${known.decisions} decisions, " +
+                    "${known.screens.size} screens" + (if (known.note != null) ", with its own note" else ""),
+            )
+            println("ai-plays-online: resuming the player memory for ${profile.title} (${known.decisions} decisions)")
+            ReaderMemory.resume(known)
+        } ?: ReaderMemory()
         recorder?.let { r ->
             emulator.frameListener = r::onFrame
             emulator.humanInputListener = { r.humanInput(emulator.status.value.frameCount) }
@@ -497,6 +527,8 @@ class AppController(
                 settings = { _settings.value },
                 walkthrough = walkthrough,
                 runsDirectory = config.dataDirectory.resolve("runs"),
+                memory = readerMemory ?: ReaderMemory(),
+                onMemory = { known -> saveReaderMemory(known) },
                 narrator = { narrator() },
             )
             else -> null
@@ -598,6 +630,31 @@ class AppController(
         if (!mine) return
         runCatching { ReaderCatalog.write(verifierFor(reader).verifiedReader(verification), config.dataDirectory) }
             .onFailure { failure -> println("ai-plays-online: could not save the reader check: ${failure.message}") }
+    }
+
+    /**
+     * Writes what the player knows now (the game is closing): the next session starts from it instead of exploring the
+     * same menus again. Harmless when nothing was decided, and when the player is not a reader player.
+     */
+    fun saveMemoryOnClose() {
+        val memory = (_player.value as? ReaderPlayer)?.memory ?: readerMemory ?: return
+        if (memory.totalDecisions == 0) return
+        saveReaderMemory(memory, force = true)
+    }
+
+    /**
+     * Writes the player's memory to `<data>/readers/<id>.memory.json` ([ReaderMemoryStore]), at most every
+     * [MEMORY_WRITE_INTERVAL_MILLIS] unless [force]. A write failure is printed and ignored: losing what the player
+     * learned is not worth failing a game over, and it simply learns it again next time.
+     */
+    private fun saveReaderMemory(memory: ReaderMemory, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastMemoryWriteMillis < MEMORY_WRITE_INTERVAL_MILLIS) return
+        lastMemoryWriteMillis = now
+        val data = memory.toData(profile.id, romSha256)
+        runCatching { ReaderMemoryStore.write(data, config.dataDirectory) }
+            .onFailure { failure -> println("ai-plays-online: could not save the player memory: ${failure.message}") }
+        _memory.value = data
     }
 
     /**
@@ -801,6 +858,9 @@ class AppController(
 
         /** How often the check of a reader is written back into it at most (a write is a file, and a file is not free). */
         const val VERIFICATION_WRITE_INTERVAL_MILLIS = 30_000L
+
+        /** How often what the player learned is written down at most (it writes on close too, see [saveMemoryOnClose]). */
+        const val MEMORY_WRITE_INTERVAL_MILLIS = 10_000L
 
         /** Times a chapter's landmark has to be seen on the same `screen` value before it becomes a progress signal. */
         const val MIN_LANDMARK_SIGHTINGS = 3
