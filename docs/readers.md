@@ -132,6 +132,17 @@ How it decides, and why it is not guesswork:
   clock — a counter that happens to move once per screen looks perfect until a screen comes back.
 - **It refuses to write junk.** A reader is only written when a signal separates at least 3 screens, has survived 8+
   looks of checking, and was seen again on a screen that came back. Until then the panel says what it is still missing.
+- **It also proposes what counts and what the game says.** A reader is not only "which screen is up":
+  - a **counter** (`u16`/`u32`, confidence 0.7) is a value that, within one part of memory, only ever went one way,
+    moved at least twice, and did *not* move on most looks — money, a score, a level. A frame counter rises on every
+    look, so it is excluded; a menu cursor or a health bar goes both ways, so it is excluded too; two (or four)
+    printable characters are text, not a number.
+  - a **text** run (`ascii`, confidence 0.6) is a run of at least 6 printable characters ended by a zero byte whose
+    content *changed* while the game was played — a dialogue box, a label. A string nobody rewrites is not proposed
+    (and binary data that merely looks printable is not: the run has to end at a zero byte).
+  A draft keeps 4 screen signals, 2 counters and 1 text run; a counter and a text run are only written **with** a
+  screen signal, because a reader without `screen` would make the game typed while telling the agent nothing about
+  where it is.
 - **What it learned is not lost when the game closes.** The evidence — the screens seen, the signals found, how often
   each was checked, and the part of memory the sweep had reached — is written to
   `<data>/readers/<id>.learning.json` as it goes (every few seconds, and once more on close). The next session resumes
