@@ -87,6 +87,42 @@ ROM that you dumped yourself** (no ROM is provided — see [Tested games](#teste
 
 A ROM on the command line (`./gradlew startApp -PappArgs="/path/to/game.nds"`) opens that game directly.
 
+### Building from a clean clone
+
+Most dependencies come from Maven Central, but four artifacts are **ours** and are published to GitHub Packages by
+their own repositories:
+
+| Artifact | Published by | Why not Central |
+| --- | --- | --- |
+| `dev.kotlinds:libretro-rollback:0.1.0-SNAPSHOT` | `SamurAI-Official/libretro-rollback` (`.github/workflows/publish.yml`) | it is our engine; upstream has no such artifact |
+| `dev.kotlinds:pokemon-client{,-libretro,-rollback}:0.1.2-SNAPSHOT` | `SamurAI-Official/pokemon-client` (same workflow) | `-SNAPSHOT`s are never on Central, and `pokemon-client-rollback` is ours (netplay) |
+
+GitHub Packages needs a token **even to read**, so a clean clone builds once you give Gradle one with
+`read:packages` — either in the environment:
+
+```bash
+export GITHUB_TOKEN=$(gh auth token)     # the token needs the read:packages scope
+./gradlew test
+```
+
+or in `~/.gradle/gradle.properties` (used when the environment has nothing):
+
+```properties
+gpr.user=SamurAI-Official
+gpr.key=ghp_…                            # a PAT with read:packages
+```
+
+CI needs nothing extra: its own `GITHUB_TOKEN` has `packages: read` (see `.github/workflows/build.yml`), which is how
+every push proves the clean-clone build still works.
+
+Working on one of those repositories instead? Publish it locally and `mavenLocal()` (tried first) wins:
+
+```bash
+cd ../libretro-rollback && ./scripts/publish-libretro-rollback.sh   # the engine
+cd ../pokemon-client     && ./gradlew publishToMavenLocal           # the client and its adapters
+```
+
+
 ## The launcher (macOS)
 
 `./make_launcher.sh` builds the app and installs **AI Plays Online.app** into `~/Applications` and

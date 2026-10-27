@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write # upload artifacts to the release
+  packages: read # dev.kotlinds artifacts come from GitHub Packages (see settings.gradle.kts)
 
 jobs:
   jar:
@@ -35,14 +36,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # CI has no mavenLocal snapshot: releases build against the published version of the same number.
-      - name: Use the released pokemon-client
-        run: |
-          sed -i -E 's/^(pokemon-client = "[^"]+)-SNAPSHOT"/\1"/' gradle/libs.versions.toml
-          grep '^pokemon-client = ' gradle/libs.versions.toml
-
       # -Puniversal ships the UI natives of every desktop platform in the one jar (see build.gradle.kts).
+      # The dev.kotlinds artifacts are the fork's snapshots, resolved from GitHub Packages with the token above (a
+      # release is built from the state the tag was cut on, which is that fork).
       - name: Test and build the universal JAR
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew test packageUberJarForCurrentOS -Puniversal
 
       - name: Attach the JAR and its checksum

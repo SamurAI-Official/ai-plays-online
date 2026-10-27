@@ -1,0 +1,35 @@
+# Builds the app on every push and pull request: what proves a clean clone works — no mavenLocal on a runner, so the
+# dev.kotlinds artifacts come from GitHub Packages (see settings.gradle.kts), which needs `packages: read`.
+name: build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read # dev.kotlinds:libretro-rollback and the pokemon-client fork
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up the JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Test
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew --no-daemon test
