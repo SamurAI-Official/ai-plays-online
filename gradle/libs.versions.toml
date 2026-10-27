@@ -9,7 +9,9 @@ slf4j = "2.0.17"
 mcp = "0.15.0"
 ktor = "3.5.1"
 kover = "0.9.11"
-# dev.kotlinds:pokemon-client (github.com/kotlinds/pokemon-client): a -SNAPSHOT is consumed from mavenLocal while developing
+# dev.kotlinds:pokemon-client (github.com/kotlinds/pokemon-client): the fork's -SNAPSHOT, published to GitHub Packages
+# by SamurAI-Official/pokemon-client (see settings.gradle.kts and README → Building from a clean clone); a snapshot
+# published locally with `publishToMavenLocal` is used first while developing.
 pokemon-client = "0.1.2-SNAPSHOT"
 
 [libraries]
