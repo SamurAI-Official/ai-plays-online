@@ -232,7 +232,7 @@ class ReaderMemory(
         }
 
         /** What [ReaderActions.describeChange] says when an action changed nothing. */
-        private const val NOTHING_CHANGED = "nothing changed"
+        private const val NOTHING_CHANGED = ReaderActions.NOTHING_CHANGED
 
         /** How many outcomes elsewhere are worth telling the model about. */
         private const val WORTH_REMEMBERING = 12

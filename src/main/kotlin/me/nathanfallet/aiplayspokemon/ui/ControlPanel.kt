@@ -649,6 +649,7 @@ private fun DecisionCard(decision: Decision) {
             )
             decision.thought?.let { Text("“$it”", style = MaterialTheme.typography.bodySmall) }
             decision.problem?.let { Text("Failed: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            decision.stopped?.let { Text("Stopped: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
             // A sequence ending early by its own rules is normal: said, not shown as an error.
             decision.stop?.let { Text("Sequence ended: $it", style = MaterialTheme.typography.bodySmall) }
             if (decision.confidence != null) decision.probabilities.forEach { (option, probability) ->

@@ -1,6 +1,7 @@
 package me.nathanfallet.aiplayspokemon.agent
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -40,6 +41,7 @@ object ReaderPrompt {
         history: List<String>,
         stagnation: Int,
         memory: JsonObject? = null,
+        stop: ReaderChain.Stop? = null,
     ): JsonObject = buildJsonObject {
         put("game", profile.title)
         put("objective", objective)
@@ -79,6 +81,13 @@ object ReaderPrompt {
             putJsonObject("last_action") {
                 put("did", action)
                 put("result", lastChange ?: "unknown")
+                // A plan that stopped before its end says so, with the same field names the typed chains use
+                // (`not_done`, `not_done_code`, `not_done_reason`): what was left, and why.
+                stop?.let { reason ->
+                    putJsonArray("not_done") { reason.notDone.forEach { add(JsonPrimitive(it)) } }
+                    put("not_done_code", reason.code)
+                    put("not_done_reason", reason.message)
+                }
             }
         }
         if (history.isNotEmpty()) {
@@ -102,6 +111,12 @@ object ReaderPrompt {
         append("yourself, `what_you_tried_here` is what each action already did on this screen, and ")
         append("`screens_you_have_seen` is where you have been. Read it before deciding: it says what you already ")
         append("know, so you do not explore the same menus again. ")
+        append("You may add steps after your choice (`then`): a step is an option id, or ")
+        append("`{\"action\": \"<option id>\", \"when\": {\"is\": \"<what the reader must show>\"}}` to run it only while ")
+        append("the game still shows that (`is_not` for the opposite). A step without `when` is only run while the game ")
+        append("is still moving: if your action changed nothing, the plan stops there and `last_action` says what was ")
+        append("left as `not_done` with `not_done_code` and `not_done_reason`. Use `when` when you know what the game ")
+        append("should show next — it is how a plan survives a menu that has one entry less than you thought. ")
         append("`screen` is what the picture shows and how it is moving: use it — a dialogue box wants A, a menu wants ")
         append("the D-pad, a stable picture means the game is waiting for you, and a picture that keeps changing is ")
         append("loading or animating. `screen.looks_like` is a reading of the picture, and like the walkthrough it can ")

@@ -15,6 +15,7 @@ import dev.kotlinds.pokemonclient.runtime.Recorder
 import me.nathanfallet.aiplayspokemon.decision.ChoiceResult
 import me.nathanfallet.aiplayspokemon.decision.DecisionException
 import me.nathanfallet.aiplayspokemon.decision.DecisionModel
+import me.nathanfallet.aiplayspokemon.decision.ThenStep
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import dev.kotlinds.pokemonclient.PokemonGame
 import dev.kotlinds.pokemonclient.actions.GameAction
@@ -186,7 +187,15 @@ class PokemonPlayer(
             is Gated.Committed -> gated
         }
 
-        val report = session.act(turn, committed.choice, committed.then, committed.result.thought, committed.result.note)
+        val report = session.act(
+            turn,
+            committed.choice,
+            // A typed game has its own chain stop rules, so a step's own condition (a reader-game thing) is not used
+            // here: only the option ids of the steps are taken.
+            committed.then.map { it.action },
+            committed.result.thought,
+            committed.result.note,
+        )
 
         val decision = Decision(
             number = state.value.decisions + 1,
@@ -238,7 +247,7 @@ class PokemonPlayer(
 
         data class Committed(
             val choice: AgentSession.Option,
-            val then: List<String>,
+            val then: List<ThenStep>,
             val result: ChoiceResult,
             val byPlanner: Boolean,
             override val inputTokens: Int,
@@ -399,6 +408,11 @@ data class Decision(
     val byPlanner: Boolean = false,
     /** Why a step failed, if one did. */
     val problem: String? = null,
+    /**
+     * Why the sequence stopped before its end although nothing failed (a step's own condition no longer holds, nothing
+     * changed: see [me.nathanfallet.aiplayspokemon.agent.ReaderChain]).
+     */
+    val stopped: String? = null,
     /** Why the sequence ended early by one of its rules, nothing failing (a step not offered, nothing happening...). */
     val stop: String? = null,
     /**

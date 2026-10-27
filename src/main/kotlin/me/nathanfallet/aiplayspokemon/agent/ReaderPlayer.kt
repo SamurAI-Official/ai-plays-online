@@ -89,6 +89,7 @@ class ReaderPlayer(
         var stagnation = 0
         var lastAction: String? = null
         var lastChange: String? = null
+        var lastStop: ReaderChain.Stop? = null
         var reports: Map<Screens.Screen, ActionReport> = emptyMap()
 
         while (scope.isActive && state.value.playing) {
@@ -122,10 +123,14 @@ class ReaderPlayer(
                     history = history.toList(),
                     stagnation = stagnation,
                     memory = memory.describe(before),
+                    stop = lastStop,
                 ),
                 instructions = ReaderPrompt.instructions(profile, chapter, model.generative),
                 options = ReaderActions.options(),
                 allowSequence = settings().allowSequences,
+                // A reader game's steps may say what the game has to show for them (see ReaderChain): the typed chain's
+                // own stop rules do not exist here, so this is how a plan keeps its assumptions honest.
+                allowConditions = settings().allowSequences,
                 reasoning = settings().reasoning,
                 allowNote = settings().modelNotes,
             )
@@ -143,27 +148,43 @@ class ReaderPlayer(
 
             val chosen = result.choice.takeIf { ReaderActions.plan(it) != null }
                 ?: error("the model chose '${result.choice}', which is not one of the options")
-            val sequence = (listOf(chosen) + result.then.takeIf { settings().allowSequences }.orEmpty())
-                .filter { ReaderActions.plan(it) != null }
+            val plan = ReaderChain.plan(
+                choice = chosen,
+                then = result.then,
+                allowSequences = settings().allowSequences,
+                isOption = { option -> ReaderActions.plan(option) != null },
+            )
 
             val performed = mutableListOf<String>()
             var problem: String? = null
-            for (option in sequence) {
-                val (actionReports, outcome) = perform(option)
+            var stop: ReaderChain.Stop? = null
+            for ((index, step) in plan.withIndex()) {
+                val (actionReports, outcome) = perform(step.action)
                 reports = actionReports
-                performed += option
+                performed += step.action
                 if (outcome != null) {
                     problem = outcome
                     break
                 }
+                val next = plan.getOrNull(index + 1) ?: break
+                // What the game shows right after this step: what the next step's condition is about, and whether
+                // anything happened at all (in the reader, or on a screen).
+                val now = observe()
+                val moved = actionReports.values.any { it.changed } ||
+                    ReaderActions.describeChange(before, now) != ReaderActions.NOTHING_CHANGED
+                stop = ReaderChain.verdict(next, now, moved)?.let { reason ->
+                    reason.copy(notDone = plan.drop(index + 1).map { it.described })
+                }
+                if (stop != null) break
             }
 
             val after = observe()
             val change = ReaderActions.describeChange(before, after)
             val summary = ReaderActions.summary(before) + " | " + view.summary()
-            stagnation = if (change == "nothing changed") stagnation + 1 else 0
+            stagnation = if (change == ReaderActions.NOTHING_CHANGED) stagnation + 1 else 0
             lastAction = performed.joinToString(" then ")
             lastChange = change
+            lastStop = stop
 
             val decision = Decision(
                 number = state.value.decisions + 1,
@@ -177,8 +198,11 @@ class ReaderPlayer(
                 note = result.note,
                 problem = problem,
                 change = change,
+                stopped = stop?.message,
             )
-            history += ReaderPrompt.historyLine(decision.number, lastAction, change, summary)
+            history += ReaderPrompt.historyLine(decision.number, lastAction, change, summary) + stop
+                ?.let { reason -> " · not done: ${reason.notDone.joinToString(", ")} (${reason.code})" }
+                .orEmpty()
             while (history.size > ReaderPrompt.HISTORY_SIZE) history.removeFirst()
             // What this decision taught the player, kept beyond this session: what it tried where, the screens it has
             // been on, and the model's own note (which the next session picks up again).

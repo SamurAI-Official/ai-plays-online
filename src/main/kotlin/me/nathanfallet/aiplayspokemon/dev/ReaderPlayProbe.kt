@@ -16,6 +16,8 @@ import me.nathanfallet.aiplayspokemon.config.AppConfig
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
 import me.nathanfallet.aiplayspokemon.decision.ChoiceResult
 import me.nathanfallet.aiplayspokemon.decision.DecisionModel
+import me.nathanfallet.aiplayspokemon.decision.StepCondition
+import me.nathanfallet.aiplayspokemon.decision.ThenStep
 import me.nathanfallet.aiplayspokemon.decision.llm.LlmDecisionModel
 import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
@@ -114,7 +116,8 @@ fun main(args: Array<String>) = runBlocking {
             val decision = state.lastDecision
             val summary = decision?.summary.orEmpty()
             val actions = decision?.actions?.joinToString("+").orEmpty()
-            println("#${decision?.number}  $summary  →  $actions  →  ${decision?.change.orEmpty()}")
+            val stopped = decision?.stopped?.let { reason -> "  [plan stopped: $reason]" }.orEmpty()
+            println("#${decision?.number}  $summary  →  $actions  →  ${decision?.change.orEmpty()}$stopped")
         }
     }
     player.pause()
@@ -162,12 +165,25 @@ private class RouteModel : DecisionModel {
             else -> "wait"
         }
         val note = if (decisions++ == 0) "my note: press A through the menus, then hold right in a mission" else null
+        // A plan, not just a sequence: press A, then press A again **if** the game did what this screen promised. The
+        // second entry is on purpose a condition the game does not satisfy (the campaign screen leads elsewhere), so a
+        // run of the probe shows both a step that runs and a plan that stops.
+        val then = when {
+            screen.contains("main menu (19)") -> listOf(
+                ThenStep("press_a", StepCondition(isText = "single player menu (18)")),
+            )
+            screen.contains("select campaign (64)") -> listOf(
+                ThenStep("press_a", StepCondition(isText = "in mission (84)")),
+            )
+            else -> emptyList()
+        }
         return ChoiceResult(
             choice = option,
             probabilities = mapOf(option to 1.0),
             confidence = 1.0,
             model = name,
             note = note,
+            then = then,
             inputTokens = 0,
         )
     }

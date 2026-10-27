@@ -305,6 +305,12 @@ press a button, hold a direction, tap the touch screen, wait). The model is told
 the reader's values, and — after each action — **what changed** (`screen: 19 → 18`), plus a `stuck` note once actions
 stop changing anything. Nothing in it is game-specific: another calibrated reader, another game.
 
+A sequence of actions is treated as a **plan** (`agent/ReaderChain.kt`): each step may carry the state the model
+expects (`{"action": "press_a", "when": {"is": "single player menu (18)"}}`), and a step without one is only run while
+the game is still moving — so a menu that reacts differently than expected stops the plan instead of pressing blindly
+into the next screen. The steps left and why are reported as `not_done` / `not_done_code` / `not_done_reason`, the same
+fields the typed chains use.
+
 ### What it remembers between sessions
 
 A reader game is explored over many sessions, and the player used to start from nothing every launch: its note was
@@ -347,6 +353,44 @@ Run the probe with `--memory` twice and the second run starts knowing the game:
 # memory in the last request: {…"decisions_taken_so_far":20,"note_about_that":"you played this game before…"…}
 # memory: wrote …/readers/age-of-empires-aok.memory.json (20 decisions over 6 screens)
 ```
+
+### What a plan is allowed to assume
+
+A sequence of actions is a **plan**, and a plan rests on assumptions. In a typed game the app knows when they break
+(the battle changed, the map changed, nothing happened for a while: `ChainStop`). In a reader game there is no such
+thing to watch, so the reader itself is what keeps a plan honest — two rules, both checked right after each step:
+
+- **the model's own expectation** for a step. `then` entries may be objects instead of plain ids:
+
+  ```json
+  {"choice": "press_a", "then": [{"action": "press_a", "when": {"value": "screen", "is": "single player menu (18)"}}]}
+  ```
+
+  The step only runs while the reader still shows that. What the model writes is matched against the value as it is
+  rendered — the whole text, the name, or the number, case-insensitively (`single player menu (18)`, `Single Player
+  Menu`, `18` all match) — never as a substring, so `1` does not match `18`. `is_not` is the same matching, negated, and
+  `value` defaults to `screen`.
+- **the plain fact that nothing moved**. A step with no condition is only run while the game is still moving: if the
+  previous action changed nothing in the reader *and* nothing on either screen, the rest of the plan is not done — it
+  was planned for a state the game never reached. A step with an explicit `when` overrides this (the model knows what
+  it wants: "if we are *still* on the main menu, press B").
+
+Either way the plan stops, the steps left are not done, and the next state says so with the **same field names the typed
+chains use**: `not_done` (the steps left), `not_done_code` (`CONDITION_FAILED`, `NOTHING_CHANGED`) and
+`not_done_reason` (one sentence). The panel shows it as `Stopped: …` under the decision.
+
+On AoE, with the scripted probe model that plans "press A, then press A again if we reached the submenu":
+
+```text
+#7   screen main menu (19)   →  press_a  →  nothing changed
+     [plan stopped: the next step only runs while `screen` is "single player menu (18)", and the reader shows "main menu (19)": it is not done]
+#9   screen main menu (19)   →  press_a+press_a  →  screen: main menu (19) → select campaign (64)
+#10  screen select campaign (64)  →  press_a  →  screen: select campaign (64) → 230
+     [plan stopped: the next step only runs while `screen` is "in mission (84)", and the reader shows "230": it is not done]
+```
+
+#9 is the plan working (the first press reached the submenu, so the second ran); #7 and #10 are it refusing to press
+blindly into a screen it did not plan for.
 
 What it is not: it cannot read the picture by itself, so `ScreenState` gives it what the app *can* say — whether the
 picture changed while it acted, how long it has been still (a still picture is a game waiting for input), which

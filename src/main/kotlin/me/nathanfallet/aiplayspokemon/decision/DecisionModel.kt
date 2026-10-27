@@ -36,10 +36,83 @@ data class ChoiceRequest(
      * after [ChoiceResult.choice] (like a player holding a direction for a few tiles).
      */
     val allowSequence: Boolean = false,
+    /**
+     * Generative models only: each step of that sequence may carry the state it expects ([ThenStep.expects]), and the
+     * player only runs it while the game still shows that (reader games, see
+     * [me.nathanfallet.aiplayspokemon.agent.ReaderChain]). Off for games whose chain has its own stop rules.
+     */
+    val allowConditions: Boolean = false,
     /** Generative models only: think step by step before answering (slower, usually smarter). */
     val reasoning: Boolean = true,
     /** Generative models only: they may rewrite a persistent note (their goal/plan), sent back next time. */
     val allowNote: Boolean = false,
+)
+
+/**
+ * A condition a model puts on a step of its sequence: a value of the state it sees has to read (or not read) something
+ * for the step to make sense. `{"value": "screen", "is": "single player menu (18)"}` in an answer.
+ *
+ * The matching is deliberately loose in one direction and strict in the other: what the model writes is compared to the
+ * value as it is rendered (`single player menu (18)`), and it may write **any** of its three readable forms — the whole
+ * text, the name before the number, or the number itself. It never matches on a substring, so `1` does not match `18`.
+ */
+data class StepCondition(
+    /** The name of the value, as the state shows it (`screen` in a reader game). */
+    val value: String = "screen",
+    /** What the value has to read, or null to not constrain it. */
+    val isText: String? = null,
+    /** What the value must not read, or null to not constrain it. */
+    val isNotText: String? = null,
+) {
+
+    /** True when [values] satisfies every part of this condition (a value that is not there at all does not). */
+    fun holds(values: Map<String, String>): Boolean {
+        val rendered = values[value] ?: return false
+        return (isText == null || matches(rendered, isText)) && (isNotText == null || !matches(rendered, isNotText))
+    }
+
+    /** One sentence for the model and the history: `` `screen` is "single player menu (18)" ``. */
+    fun describe(): String = buildString {
+        append("`$value` is ")
+        when {
+            isText != null && isNotText != null -> append("\"$isText\" and not \"$isNotText\"")
+            isText != null -> append("\"$isText\"")
+            isNotText != null -> append("not \"$isNotText\"")
+            else -> append("anything")
+        }
+    }
+
+    /** True when [rendered] reads [want]: the whole text, the name before the number, or the number itself. */
+    private fun matches(rendered: String, want: String): Boolean = want.trim().lowercase() in formsOf(rendered)
+
+    /** The readable forms of a rendered value: `single player menu (18)` → itself, `single player menu`, `18`. */
+    private fun formsOf(rendered: String): Set<String> {
+        val text = rendered.trim().lowercase()
+        val number = NUMBER.find(text)?.value ?: return setOf(text)
+        return setOf(text, number, text.replace(number, "").trim().trimEnd('(', ')', ':', '=', '-').trim())
+            .filter { it.isNotEmpty() }
+            .toSet()
+    }
+
+    private companion object {
+        /** The number a value carries, in `single player menu (18)` or `gold 120`. */
+        val NUMBER = Regex("""\d+""")
+    }
+}
+
+/**
+ * One step after [ChoiceResult.choice]: the option to run, and — in games whose state is a reader
+ * ([ChoiceRequest.allowConditions]) — what the game has to show for it to make sense.
+ *
+ * The model writes it as a plain option id, or as an object with the condition it expects:
+ * `{"action": "press_a", "when": {"value": "screen", "is": "single player menu (18)"}}`. Both forms are accepted, and
+ * a step without a condition is only run while the game is still moving (see [me.nathanfallet.aiplayspokemon.agent.ReaderChain]).
+ */
+data class ThenStep(
+    /** The option id to run (one of the request's options). */
+    val action: String,
+    /** What the game has to show for this step to make sense, or null when the model expects anything. */
+    val expects: StepCondition? = null,
 )
 
 data class ChoiceResult(
@@ -56,8 +129,8 @@ data class ChoiceResult(
     val outputTokens: Int = 0,
     /** A short explanation of the choice, for models that give one (LLMs); shown in the UI. */
     val thought: String? = null,
-    /** Further option ids to execute after [choice], when [ChoiceRequest.allowSequence] was set. */
-    val then: List<String> = emptyList(),
+    /** Further options to execute after [choice], when [ChoiceRequest.allowSequence] was set. */
+    val then: List<ThenStep> = emptyList(),
     /** The model's updated note, when [ChoiceRequest.allowNote] was set. */
     val note: String? = null,
     /** Cost of the decision in USD when the backend reports it (equivalent API price for subscriptions). */

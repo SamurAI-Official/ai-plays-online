@@ -182,8 +182,11 @@ agreement 0.99`. `dev/ReaderVerifyProbe` does the same for any ROM.
 
 **The reader also plays the game.** `ReaderPlayer` is the same observe → decide → act loop as the Pokémon player, with
 the reader's values as its state and the console's own actions (press, hold, tap, wait) — so a game nobody wrote code
-for gets an AI that can see *and* act. It also **remembers**: `agent/ReaderMemory` keeps the model's own note, what each
-action did on each screen (grouped and counted), and the screens it has been on, in
+for gets an AI that can see *and* act. Its sequences are **plans**: a step may say what it expects the game to show
+(`{"action": "press_a", "when": {"is": "single player menu (18)"}}`), and a step without one only runs while the game is
+still moving, so a plan stops — reporting `not_done`/`not_done_code`, exactly like the typed chains — instead of
+pressing blindly into a screen it did not plan for. It also **remembers**: `agent/ReaderMemory` keeps the model's own
+note, what each action did on each screen (grouped and counted), and the screens it has been on, in
 `<data>/readers/<id>.memory.json` — fed back to the model as the prompt's `memory` block, so a new session starts
 knowing the game instead of re-exploring the same menus. Verified headlessly on AoE with a scripted policy that reads
 nothing but the reader's `screen` value:

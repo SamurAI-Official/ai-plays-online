@@ -89,8 +89,11 @@ object ReaderActions {
         val changes = before.keys.union(after.keys)
             .filter { before[it] != after[it] }
             .map { name -> "$name: ${before[name] ?: "?"} → ${after[name] ?: "?"}" }
-        return if (changes.isEmpty()) "nothing changed" else changes.joinToString(", ")
+        return if (changes.isEmpty()) NOTHING_CHANGED else changes.joinToString(", ")
     }
+
+    /** What [describeChange] answers when an action changed nothing the reader can see. */
+    const val NOTHING_CHANGED = "nothing changed"
 
     /** A one-line summary of the observations, for the panel's history and the prompt. */
     fun summary(values: Map<String, String>): String =

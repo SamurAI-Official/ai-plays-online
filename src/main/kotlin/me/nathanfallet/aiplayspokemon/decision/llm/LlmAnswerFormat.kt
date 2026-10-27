@@ -2,6 +2,7 @@ package me.nathanfallet.aiplayspokemon.decision.llm
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -16,6 +17,8 @@ import kotlinx.serialization.json.putJsonObject
 import dev.kotlinds.pokemonclient.actions.ChainRunner
 import me.nathanfallet.aiplayspokemon.decision.ChoiceRequest
 import me.nathanfallet.aiplayspokemon.decision.ChoiceResult
+import me.nathanfallet.aiplayspokemon.decision.StepCondition
+import me.nathanfallet.aiplayspokemon.decision.ThenStep
 
 /**
  * How a generative model (LLM) answers a [ChoiceRequest], shared by every LLM backend.
@@ -47,7 +50,16 @@ object LlmAnswerFormat {
             // `choice` right after the reasoning, before the free-form fields: a long `note` or `then` must never
             // push the one field that matters past the token limit (an answer without `choice` is unusable).
             add("\"choice\": \"<option id>\"")
-            if (request.allowSequence) add("\"then\": [<up to ${ChainRunner.MAX_THEN} more option ids to do right after, only if you are sure; [] otherwise>]")
+            if (request.allowSequence && request.allowConditions) {
+                add(
+                    "\"then\": [<up to ${ChainRunner.MAX_THEN} steps to do right after your choice, each one either " +
+                        "an option id, or {\"action\": \"<option id>\", \"when\": {\"value\": \"<name>\", " +
+                        "\"is\": \"<what that value must read>\"}} to only run it while the state still shows that; " +
+                        "[] otherwise>]",
+                )
+            } else if (request.allowSequence) {
+                add("\"then\": [<up to ${ChainRunner.MAX_THEN} more option ids to do right after, only if you are sure; [] otherwise>]")
+            }
             if (request.allowNote) add("\"note\": \"<your updated note to yourself: current goal and plan, max 1 short sentence>\"")
         }
         append(fields.joinToString(", "))
@@ -70,8 +82,29 @@ object LlmAnswerFormat {
             if (request.allowSequence) putJsonObject("then") {
                 put("type", "array")
                 putJsonObject("items") {
-                    put("type", "string")
-                    put("enum", ids)
+                    if (request.allowConditions) {
+                        // The conditional form is the one the prompt asks for: one shape only, so structured output
+                        // stays simple. A plain option id is still accepted when parsing (models forget).
+                        put("type", "object")
+                        putJsonObject("properties") {
+                            putJsonObject("action") {
+                                put("type", "string")
+                                put("enum", ids)
+                            }
+                            putJsonObject("when") {
+                                put("type", "object")
+                                putJsonObject("properties") {
+                                    putJsonObject("value") { put("type", "string") }
+                                    putJsonObject("is") { put("type", "string") }
+                                    putJsonObject("is_not") { put("type", "string") }
+                                }
+                            }
+                        }
+                        putJsonArray("required") { add(JsonPrimitive("action")) }
+                    } else {
+                        put("type", "string")
+                        put("enum", ids)
+                    }
                 }
                 put("maxItems", ChainRunner.MAX_THEN)
             }
@@ -82,7 +115,7 @@ object LlmAnswerFormat {
         }
     }
 
-    data class Answer(val choice: String, val reasoning: String?, val note: String?, val then: List<String>) {
+    data class Answer(val choice: String, val reasoning: String?, val note: String?, val then: List<ThenStep>) {
         /**
          * The decision this answer makes for [request], as every LLM backend reports it: all the probability on the
          * choice (a generative model gives no distribution), no confidence, and what the backend measured ([model]
@@ -110,19 +143,49 @@ object LlmAnswerFormat {
 
     fun parse(obj: JsonObject, request: ChoiceRequest): Answer {
         val options = request.options.keys
-        val rawChoice = obj["choice"]?.jsonPrimitive?.contentOrNull ?: throw InvalidAnswer("The `choice` field is missing.")
+        val rawChoice = obj["choice"].text() ?: throw InvalidAnswer("The `choice` field is missing.")
         val choice = normalize(rawChoice, options)
             ?: throw InvalidAnswer("`$rawChoice` is not one of the option ids: ${options.joinToString(", ")}.")
         val then = (obj["then"] as? JsonArray).orEmpty()
-            .mapNotNull { it.jsonPrimitive.contentOrNull?.let { id -> normalize(id, options) } }
+            .mapNotNull { step -> stepOf(step, options, request.allowConditions) }
             .take(ChainRunner.MAX_THEN)
         return Answer(
             choice = choice,
-            reasoning = obj["reasoning"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
-            note = obj["note"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
+            reasoning = obj["reasoning"].text()?.takeIf { it.isNotBlank() },
+            note = obj["note"].text()?.takeIf { it.isNotBlank() },
             then = if (request.allowSequence) then else emptyList(),
         )
     }
+
+    /**
+     * One step of `then`: a plain option id, or `{"action": "<id>", "when": {…}}`. The condition is kept only when the
+     * request allowed one ([ChoiceRequest.allowConditions]); an id that is not an option is dropped (as always), and a
+     * `when` nobody can read is dropped with it, never guessed.
+     */
+    private fun stepOf(step: JsonElement, options: Set<String>, allowConditions: Boolean): ThenStep? {
+        (step as? JsonPrimitive)?.contentOrNull?.let { id ->
+            return normalize(id, options)?.let { ThenStep(it) }
+        }
+        val obj = step as? JsonObject ?: return null
+        val action = obj["action"].text() ?: return null
+        return normalize(action, options)?.let { ThenStep(it, conditionOf(obj["when"], allowConditions)) }
+    }
+
+    /** The condition of a step: `{"value": "screen", "is": "…"}` (or `is_not`), or null when there is none to keep. */
+    private fun conditionOf(raw: JsonElement?, allowConditions: Boolean): StepCondition? {
+        if (!allowConditions) return null
+        val obj = raw as? JsonObject ?: return null
+        val condition = StepCondition(
+            value = obj["value"].text()?.takeIf { it.isNotBlank() } ?: "screen",
+            isText = obj["is"].text()?.takeIf { it.isNotBlank() },
+            isNotText = obj["is_not"].text()?.takeIf { it.isNotBlank() },
+        )
+        // A condition that constrains nothing is not a condition: it would only be noise in the history.
+        return condition.takeIf { it.isText != null || it.isNotText != null }
+    }
+
+    /** The text of a JSON field, or null when it is absent or not a string (a malformed answer never throws here). */
+    private fun JsonElement?.text(): String? = (this as? JsonPrimitive)?.contentOrNull
 
     /** "A", "a button", "D-pad Up", "`up`" → "a" / "up" when they match an option id. */
     fun normalize(value: String, options: Set<String>): String? {
