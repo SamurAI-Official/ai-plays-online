@@ -514,9 +514,17 @@ APP_TEST_ROM=... APP_TEST_CORE=... ./gradlew test --tests '*AppControllerTest*'
 # music during pauses: <data> holds cores/, the states are written by dev/SaveStateProbe
 PAUSE_MUSIC_DATA=... PAUSE_MUSIC_ROM=... PAUSE_MUSIC_STATE=... ./gradlew test --tests '*ShadowAudioCheckTest*'
 
-# a decision narrated for real (NARRATION_OUT writes the WAV)
+# a decision narrated for real (NARRATION_OUT writes the WAV). Its data directory needs a HeartGold with a **real
+# in-game save**: the test boots the ROM and presses A until the game is on the field, and a fresh game never gets
+# there (it stops at the name entry)
 NARRATION_ROM=... NARRATION_DATA=... ./gradlew test --tests '*RomNarrationCheckTest*'
 ```
+
+**Point `*_DATA` at a copy of a data directory, never at the app's own.** The tests write `states/` there, and the core
+writes the in-game save (`saves/<rom>.sav`) when a console closes. A savestate carries the game's save chip, so loading
+a fixture state and closing the console **replaces the real in-game save with the one that state was taken from** — and
+a state taken in a directory that had no save (what `SaveStateProbe` does: it boots in a temp directory) carries a
+*new game*, which then boots into the name entry instead of the player's field.
 
 ### Pure, assisted, hybrid: why several modes?
 
