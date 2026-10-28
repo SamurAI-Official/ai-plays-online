@@ -30,3 +30,6 @@ runs/
 *.state[0-9]
 *.srm
 config.properties
+
+# Python bytecode (the CI helper scripts are run, not imported, but a stray compile leaves this)
+__pycache__/
