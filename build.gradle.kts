@@ -9,7 +9,13 @@ plugins {
 }
 
 group = "me.nathanfallet.aiplayspokemon"
-version = "1.0.1"
+// The release workflow checks the packaged app's version against the tag it was built from, so a release must not
+// depend on someone remembering to bump this line: on a tag (`v1.0.2`, or `v1.0.2-rc1` for a pre-release) the tag is
+// the version. Everything else — local builds, pull requests — keeps the version above.
+version = System.getenv("GITHUB_REF_NAME")
+    ?.takeIf { System.getenv("GITHUB_REF_TYPE") == "tag" && it.startsWith("v") }
+    ?.removePrefix("v")
+    ?: "1.0.1"
 
 kotlin {
     jvmToolchain(21)

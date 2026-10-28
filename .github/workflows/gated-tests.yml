@@ -1,0 +1,114 @@
+# The ROM-gated suites, on a machine that has the ROMs — the only place they can run: shipping a ROM is not ours to do,
+# and a hosted runner has none. See docs/testing.md for what each suite needs.
+#
+# Deliberately NOT on `pull_request`: this runner is yours, and a pull request from a fork would be running its code on
+# it. A manual run and a weekly check are enough to catch drift in the fixtures and the cores.
+name: gated tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  gated:
+    name: ROM-gated suites
+    # Your own runner, labelled with what it has (see the README, "The gated suites").
+    runs-on: [self-hosted, macos, roms]
+    env:
+      # Repository *variables* (Settings → Secrets and variables → Actions → Variables), never in git:
+      #   GATED_ROMS           a directory holding the ROMs below
+      #   GATED_DATA           a data directory with cores/ and the save states (the app's own is fine: it is copied)
+      #   GATED_ROLLBACK_CORE  the melonDS rollback build the netplay suites drive
+      ROMS: ${{ vars.GATED_ROMS }}
+      DATA: ${{ vars.GATED_DATA }}
+      CORE: ${{ vars.GATED_ROLLBACK_CORE }}
+      PLATINUM: Pokemon - Platinum Version (USA) (Rev 1).nds
+      HEARTGOLD: Pokemon - HeartGold Version (USA).nds
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up the JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The suites write states/, and the core writes the in-game save when a console closes: work on a copy, so a run
+      # can never replace the real save with the one a fixture state carries (docs/testing.md).
+      - name: Copy the data directory
+        run: |
+          test -d "$DATA" || { echo "GATED_DATA is not set, or is not a directory"; exit 1; }
+          rm -rf "$RUNNER_TEMP/data" "$RUNNER_TEMP/results" "$RUNNER_TEMP/wav"
+          cp -R "$DATA" "$RUNNER_TEMP/data"
+          mkdir -p "$RUNNER_TEMP/wav"
+
+      # One Gradle invocation per suite (run-gated-suite.sh), hence one JVM each: a libretro core can only be started
+      # once per process. That script also archives each suite's XML, which the summary below reads.
+
+      - name: "Netplay: two consoles over UDP, through ConsoleHost"
+        run: |
+          bash .github/scripts/run-gated-suite.sh netplay-session '*NetplaySessionTest*' \
+            "NETPLAY_TEST_ROM=$ROMS/$PLATINUM" "NETPLAY_TEST_ROLLBACK_CORE=$CORE"
+
+      - name: "Netplay: the driver itself"
+        run: |
+          bash .github/scripts/run-gated-suite.sh netplay-driver '*NetplayDriverTest*' \
+            "NETPLAY_TEST_ROM=$ROMS/$PLATINUM" "NETPLAY_TEST_ROLLBACK_CORE=$CORE"
+
+      - name: The app's wiring on a real console
+        run: |
+          bash .github/scripts/run-gated-suite.sh app-wiring '*AppControllerTest*' \
+            "APP_TEST_ROM=$ROMS/$PLATINUM" "APP_TEST_CORE=$CORE"
+
+      - name: Music during pauses
+        run: |
+          bash .github/scripts/run-gated-suite.sh shadow-audio '*ShadowAudioCheckTest*' \
+            "PAUSE_MUSIC_DATA=$RUNNER_TEMP/data" "PAUSE_MUSIC_ROM=$ROMS/$HEARTGOLD" \
+            "PAUSE_MUSIC_STATE=$RUNNER_TEMP/data/states/$HEARTGOLD.state7" "PAUSE_MUSIC_OUT=$RUNNER_TEMP/wav"
+
+      - name: Rapid pauses
+        run: |
+          bash .github/scripts/run-gated-suite.sh rapid-pauses '*RapidPausesCheckTest*' \
+            "PAUSE_MUSIC_DATA=$RUNNER_TEMP/data" "PAUSE_MUSIC_ROM=$ROMS/$HEARTGOLD" \
+            "PAUSE_MUSIC_RAPID_STATE=$RUNNER_TEMP/data/states/$HEARTGOLD.state7" "PAUSE_MUSIC_OUT=$RUNNER_TEMP/wav"
+
+      - name: A pause during a song change
+        # Skips, visibly, when the fixture is not there: that is a result too, and the summary says so.
+        run: |
+          bash .github/scripts/run-gated-suite.sh song-change '*SongChangePauseCheckTest*' \
+            "PAUSE_MUSIC_DATA=$RUNNER_TEMP/data" "PAUSE_MUSIC_ROM=$ROMS/$HEARTGOLD" \
+            "PAUSE_MUSIC_SONG_CHANGE_STATE=$RUNNER_TEMP/data/states/$HEARTGOLD.song-change.state7" \
+            "PAUSE_MUSIC_OUT=$RUNNER_TEMP/wav"
+
+      - name: A decision narrated for real
+        run: |
+          bash .github/scripts/run-gated-suite.sh narration '*RomNarrationCheckTest*' \
+            "NARRATION_ROM=$ROMS/$HEARTGOLD" "NARRATION_DATA=$RUNNER_TEMP/data" "NARRATION_OUT=$RUNNER_TEMP/wav"
+
+      - name: Say what was skipped
+        if: always()
+        run: |
+          {
+            echo "### Gated suites: what did not run"
+            echo
+            python3 .github/scripts/skipped-tests.py "$RUNNER_TEMP/results/*/*.xml"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results and the audio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gated-test-results
+          path: |
+            ${{ runner.temp }}/results
+            ${{ runner.temp }}/wav
+          if-no-files-found: warn

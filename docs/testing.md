@@ -94,6 +94,22 @@ directory needs a HeartGold with a **real in-game save**. A fresh game never get
 `SongChangePauseCheckTest` needs a state taken *while the song changes* (walking from Viridian City onto Route 22 is the
 one we use), which has to be made by playing to that point.
 
+### Running the gated suites on CI
+
+`.github/workflows/gated-tests.yml` runs all of them on a runner **you host** — the only place they can run, since a
+hosted runner has no ROM. Label the runner `self-hosted,macos,roms` and set three repository variables (Settings →
+Secrets and variables → Actions → Variables):
+
+| variable | what it points at |
+| --- | --- |
+| `GATED_ROMS` | a directory holding the ROMs (the workflow expects the file names used in the table above) |
+| `GATED_DATA` | a data directory with `cores/` and the save states; the workflow **copies** it, so this one is never written |
+| `GATED_ROLLBACK_CORE` | the melonDS rollback build the netplay suites drive |
+
+It is deliberately not wired to `pull_request`: that would run a fork's code on your machine. Run it on demand, or let
+the weekly schedule catch drift in the fixtures and the cores. Each suite runs in its own JVM
+(`.github/scripts/run-gated-suite.sh`), and the run's summary says which tests skipped and why.
+
 ## What a person has to test
 
 Automation covers the loop, not the window. If you have half an hour, this is the list that finds real bugs — and a

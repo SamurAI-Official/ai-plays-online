@@ -4,13 +4,19 @@
 The ROM-gated suites skip when their environment is missing (a ROM, a core, a save state). Gradle's log only *names* a
 skip; the reason is in the JUnit XML the test task writes, so that is what this reads. Prints markdown, exits 0 either
 way: no report at all means the tests never got that far, which the job's own failure already says.
+
+    python3 .github/scripts/skipped-tests.py [glob]
+
+The default glob is one Gradle run's results; a job that runs several suites passes its archive instead (see
+run-gated-suite.sh).
 """
 
 import glob
 import re
+import sys
 import xml.etree.ElementTree as ET
 
-RESULTS = "build/test-results/test/*.xml"
+DEFAULT_RESULTS = "build/test-results/test/*.xml"
 
 # JUnit writes the whole assertion line ("org.opentest4j.TestAbortedException: Assumption failed: PAUSE_MUSIC_ROM is not
 # set…"): the reason is the sentence after the exception and the JUnit wording, which is all noise in a summary.
@@ -30,7 +36,8 @@ def skipped(paths):
 
 
 def main() -> None:
-    rows = list(skipped(glob.glob(RESULTS)))
+    pattern = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_RESULTS
+    rows = list(skipped(glob.glob(pattern, recursive=True)))
     if not rows:
         print("Nothing was skipped.")
         return

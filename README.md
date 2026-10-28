@@ -19,6 +19,10 @@ It started as [ai-plays-pokemon](https://github.com/kotlinds/ai-plays-pokemon) a
 games: each game gets its own prompt (objective and conventions) and its own agent, and the app picks the game from
 the ROM itself. See [Tested games](#tested-games) for where each title stands.
 
+**This repository is the one to use, to report against and to build from.** Upstream is a source we sync from — the
+remote is still configured (`git remote -v`) — and where a bug is theirs rather than ours, it belongs there; `SECURITY.md`
+and the issue forms say which is which.
+
 **Bring your own ROM.** No game, BIOS or firmware is included, downloaded or linked to: you must dump your own
 cartridges. This project is an orchestration and optimization layer over the projects we compiled, patched and tested
 (see [Provenance](#provenance-and-licenses)).
@@ -131,6 +135,25 @@ Working *on* one of those libraries (or trying a change before committing it)? E
 `client/pokemon-client` or `engine/libretro-rollback`: this build uses it directly. `mavenLocal()` is tried first as
 well, so `./gradlew publishToMavenLocal` in there still wins if you prefer that route.
 
+
+### Cutting a release
+
+Tag it and the rest follows: `release.yml` builds the universal JAR and the macOS DMG from that tag — submodules
+included, so a release is exactly the stack the tag names — attaches both with their checksums, and takes the version
+from the tag itself (see `build.gradle.kts`), so nothing has to be bumped by hand.
+
+```bash
+git tag v1.0.2-rc1 && git push samurai v1.0.2-rc1
+gh release create v1.0.2-rc1 --prerelease --generate-notes     # testers first
+```
+
+Publish it as a **pre-release** while it is meant for testers: GitHub then keeps "latest" — and the download badge —
+on the last stable release. Drop `--prerelease` when it is ready for everyone.
+
+The ROM-gated suites are not part of that: they need a ROM, so they run on a self-hosted runner
+(`.github/workflows/gated-tests.yml`, weekly or on demand). Run them before tagging a release that touches netplay,
+audio during pauses or narration — and note that the tests cannot see the window: what a person has to try by hand is
+listed in [`docs/testing.md`](docs/testing.md).
 
 ## The launcher (macOS)
 
