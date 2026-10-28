@@ -20,3 +20,12 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # The engine and the client are submodules, so the app's build depends on two commits it pins: bumping them is a
+  # dependency update like any other (and the app's own tests, plus testAll, say whether the new commits are good).
+  - package-ecosystem: gitsubmodule
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2

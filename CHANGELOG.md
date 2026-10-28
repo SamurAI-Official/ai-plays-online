@@ -19,7 +19,13 @@ Notable changes, newest first. Releases are on
 
 ### Changed
 
-- **A test that needs a ROM (or a core, or a save state) now skips visibly** — with its reason, printed by
+- **A clean clone needs no credentials any more.** The engine and the game client (with its adapters) used to come from
+  our GitHub Packages, which needs a token even to read; they are submodules now and Gradle builds them from source, so
+  `git clone --recursive && ./gradlew test` is the whole setup. `./gradlew testAll` runs the libraries' own tests too
+  (1,200-odd of them, on top of the app's 308).
+- **CI tests on macOS as well as Linux**, keeps the JUnit XML and the log as artifacts, and writes every skipped test —
+  with its reason — into the run's summary.
+- A test that needs a ROM (or a core, or a save state) now skips visibly — with its reason, printed by
   `./gradlew test` and uploaded with the CI run — instead of passing while testing nothing. Gated suites name their own
   variables (`POKEMON_ROM` is the app's own, so they no longer use it). See [`docs/testing.md`](docs/testing.md).
 - The README's test section documents every gated suite, what it needs, and the rule that keeps the fixtures safe:
