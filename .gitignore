@@ -19,6 +19,10 @@ roms/
 *.dll
 *.zip
 
+# JVM crash dumps (a core that crashed in native code leaves one behind: never a source file)
+hs_err_pid*.log
+replay_pid*.log
+
 # Emulator/agent runtime artifacts that can land in the working tree
 snapshots/
 runs/

@@ -498,9 +498,25 @@ Central; a `-SNAPSHOT` from `mavenLocal()` while developing):
   deciders: our loop (`PokemonPlayer` with Jev, LLMs through Koog, or `claude -p`) or an external agent through MCP.
 
 Tests: `./gradlew test`; the library's own tests (and the ROM tests) live in its repository. Coverage with
-`./gradlew koverHtmlReport`. The two-console netplay test is gated like the other ROM tests:
-`POKEMON_ROM=... NETPLAY_TEST_ROLLBACK_CORE=... ./gradlew test --tests '*NetplaySessionTest*'` (the core is
-copied per peer, so leave `POKEMON_MELONDS_ROLLBACK_CORE` unset).
+`./gradlew koverHtmlReport`. A few tests need a ROM (and sometimes a core or a save state) and are **gated**: without
+their environment they are *skipped*, and `./gradlew test` prints them with the reason, so a green run never hides a
+path that did not run. Each names its own variables (`POKEMON_ROM` is what the *app* opens a game with, so the tests do
+not use it) — **run them one at a time**, since a libretro core can only be started once per process:
+
+```
+# two consoles over UDP, through ConsoleHost and through NetplayDriver (the core is copied per peer:
+# leave POKEMON_MELONDS_ROLLBACK_CORE unset, both peers would resolve the same file)
+NETPLAY_TEST_ROM=... NETPLAY_TEST_ROLLBACK_CORE=... ./gradlew test --tests '*Netplay*Test*'
+
+# the app's wiring (keys, pause, settings, the panel) on a real console
+APP_TEST_ROM=... APP_TEST_CORE=... ./gradlew test --tests '*AppControllerTest*'
+
+# music during pauses: <data> holds cores/, the states are written by dev/SaveStateProbe
+PAUSE_MUSIC_DATA=... PAUSE_MUSIC_ROM=... PAUSE_MUSIC_STATE=... ./gradlew test --tests '*ShadowAudioCheckTest*'
+
+# a decision narrated for real (NARRATION_OUT writes the WAV)
+NARRATION_ROM=... NARRATION_DATA=... ./gradlew test --tests '*RomNarrationCheckTest*'
+```
 
 ### Pure, assisted, hybrid: why several modes?
 

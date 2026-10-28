@@ -83,6 +83,9 @@ class NetplayDriver(
     /** True while frames can run: the handshake finished and nothing has stopped the session. */
     val isSynchronized: Boolean get() = session.isSynchronized
 
+    /** True once [close] ran: a loop driving this driver ([tick]) can stop on it. */
+    val isClosed: Boolean get() = closed
+
     private fun publish() {
         val stats = session.stats
         _status.update {
