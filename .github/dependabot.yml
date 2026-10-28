@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # One grouped pull request a week for the Gradle side: the toolchain, the Compose/Koog/Ktor dependencies and the
+  # dev.kotlinds artifacts (which the composite build substitutes, so a bump there is a submodule bump instead).
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      gradle:
+        patterns: ["*"]
+
+  # The workflows themselves (actions/checkout, setup-java, setup-gradle) move rarely: monthly is enough.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

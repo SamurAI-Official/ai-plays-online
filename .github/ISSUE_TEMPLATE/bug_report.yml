@@ -1,0 +1,115 @@
+name: Bug report
+description: Something the app did wrong — a crash, a stuck game, an action that misfired
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things make a report actionable: **what you saw** and **how to see it again**. If it happened once and you
+        cannot reproduce it, say so — that is useful too, just file it as a test report instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        I asked the agent to leave the house; it walked into the wall for a minute, then the action failed with
+        "no route to the door".
+    validations:
+      required: true
+
+  - type: input
+    id: game
+    attributes:
+      label: Game (and region/revision)
+      placeholder: Pokémon HeartGold (USA)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: how
+    attributes:
+      label: How are you running it?
+      options:
+        - macOS app (DMG)
+        - Cross-platform JAR
+        - From source (./gradlew startApp)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows
+        - Other (say which in the description)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release you took, or the commit you built (`git rev-parse --short HEAD`).
+      placeholder: 1.0.1 / 0b5b2f1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: who-was-playing
+    attributes:
+      label: Who was playing?
+      options:
+        - Jev
+        - An LLM (OpenAI, Anthropic, OpenRouter, Ollama)
+        - Claude Code (claude -p)
+        - An external agent over MCP
+        - Just me (no AI)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Control mode
+      options: [Pure, Assisted, Hybrid, Not sure]
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: The app's log
+      description: |
+        The panel's log, or the run directory under `~/.ai-plays-online/runs/`. It names the driver, the action and
+        the frames, so it usually says more than a screenshot. Trim it if it is long — keep the lines around the
+        failure.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: If you found a sequence that brings it back, write it here (even roughly).
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I dumped the ROM myself (no game, BIOS or firmware is included, and we cannot help with ROMs)
+          required: true
+        - label: I searched the existing issues for this
+          required: true
+        - label: This is not a security issue (those go through the Security tab, see SECURITY.md)
+          required: true

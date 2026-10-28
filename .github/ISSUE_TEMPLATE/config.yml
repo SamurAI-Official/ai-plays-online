@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions, and "does it work on my machine?"
+    url: https://github.com/SamurAI-Official/ai-plays-online/discussions
+    about: Discussions is for questions and for showing a run. Issues is for something that is wrong.
+  - name: A game nobody has tried yet
+    url: https://github.com/SamurAI-Official/ai-plays-online/discussions/new?category=show-and-tell
+    about: Tell us the ROM's code and what the AI did with it — we add profiles and walkthroughs for titles people actually play.
+  - name: Security
+    url: https://github.com/SamurAI-Official/ai-plays-online/security/advisories/new
+    about: Please report vulnerabilities privately (see SECURITY.md), not in a public issue.

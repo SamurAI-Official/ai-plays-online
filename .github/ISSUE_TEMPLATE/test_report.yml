@@ -1,0 +1,90 @@
+name: Test report
+description: Tell us what worked on your machine — including when it simply worked
+title: "[test] "
+labels: ["test-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One result per game and platform is what keeps the [Tested games](../../#tested-games) table honest, and "it
+        worked" is as useful as a bug: it is the only way to know a row is still true. Nothing here is a commitment —
+        report what you saw, however far it got.
+
+  - type: input
+    id: game
+    attributes:
+      label: Game (and region/revision)
+      placeholder: Pokémon Platinum (USA) (Rev 1)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: How far did it get?
+      options:
+        - Worked — played for a while, nothing wrong
+        - Partly — it played, but something was off
+        - Did not work — it did not get going
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon), DMG
+        - macOS, from source
+        - Linux, from source
+        - Windows, from source
+        - Other (say which in the notes)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 1.0.1 / 0b5b2f1
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-you-tried
+    attributes:
+      label: What you tried
+      description: |
+        The mode (Pure / Assisted / Hybrid), who was playing (Jev, an LLM, Claude Code, an agent over MCP, yourself),
+        how long it ran, and how far it got in the game. Anything you noticed about the screen, the audio, the pacing
+        or the map is worth a line.
+      placeholder: |
+        Assisted mode with Jev, ~20 minutes from the title screen. It left New Bark Town, took Route 29 and got to
+        Cherrygrove. The map description matched what I saw; the walk actions looked deliberate, no wall-hugging.
+    validations:
+      required: true
+
+  - type: textarea
+    id: oddities
+    attributes:
+      label: Anything off?
+      description: Even if it did not stop you — a wrong name, a menu it read wrong, a stutter, a music jump.
+    validations:
+      required: false
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware worth mentioning
+      description: Audio device, Bluetooth headphones, a laptop on battery, a second machine for online play.
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: The run's log (optional)
+      description: If you kept the run directory (`~/.ai-plays-online/runs/`), the interesting lines help a lot.
+      render: text
+    validations:
+      required: false

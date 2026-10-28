@@ -1,5 +1,10 @@
 # ai-plays-online
 
+[![build](https://github.com/SamurAI-Official/ai-plays-online/actions/workflows/build.yml/badge.svg)](https://github.com/SamurAI-Official/ai-plays-online/actions/workflows/build.yml)
+[![latest release](https://img.shields.io/github/v/release/SamurAI-Official/ai-plays-online?label=download)](https://github.com/SamurAI-Official/ai-plays-online/releases/latest)
+[![license](https://img.shields.io/github/license/SamurAI-Official/ai-plays-online)](LICENSE)
+[![Java 21](https://img.shields.io/badge/Java-21-blue)](https://adoptium.net/temurin/releases/?version=21)
+
 Put an AI in front of a Nintendo DS game and watch it play, live (and take back the controls whenever you want). The
 same game, the same "eyes" and the same controller for every AI, so they can be compared:
 
@@ -75,6 +80,25 @@ ROM that you dumped yourself** (no ROM is provided — see [Tested games](#teste
       (streamable HTTP);
     - **an LLM or Jev from the app**: choose it in the panel on the right, paste its API key if needed, and click
       **▶ Let … play**.
+
+## Help us test
+
+This is a small project testing something large: an AI playing real Nintendo DS games, end to end. The most useful thing
+you can send us is a **result from your machine** — what worked, and what did not.
+
+- **Play it and tell us.** Take a [release](https://github.com/SamurAI-Official/ai-plays-online/releases/latest), pick a
+  game you dumped yourself, and let an AI play for a while. Then file a
+  **[test report](https://github.com/SamurAI-Official/ai-plays-online/issues/new?template=test_report.yml)**: one line
+  per game and platform is what keeps the [Tested games](#tested-games) table honest, and "it worked" is as useful as a
+  bug. Nothing to install: the macOS build brings its own Java.
+- **Something wrong?** A **[bug report](https://github.com/SamurAI-Official/ai-plays-online/issues/new?template=bug_report.yml)**
+  with the app's log usually says more than a screenshot.
+- **Questions, or a run to show?** [Discussions](https://github.com/SamurAI-Official/ai-plays-online/discussions).
+- **Run the tests yourself.** `./gradlew test` needs no ROM. The suites that do need one are documented suite by suite in
+  [`docs/testing.md`](docs/testing.md), which also lists **what a person has to test** — the window, the launcher, a LAN
+  game, audio devices — where the bugs we cannot automate live.
+- **Send a game nobody has tried.** The app reads any DS game (screen-only when it has no typed reader), and we add
+  profiles, walkthroughs and readers for the titles people actually play.
 
 ## Building and running
 
@@ -154,6 +178,10 @@ We run every title ourselves and record what works. "Typed agent" means the AI g
 (pokemon-client readers, the fullest support); "screen only" means the game runs, the human can play, and the emulator
 is measured, but the AI would only have the screen. A ROM is identified by its header, so another region or revision
 of the same game still works (and may be untested).
+
+**Your result belongs here too**: a [test report](https://github.com/SamurAI-Official/ai-plays-online/issues/new?template=test_report.yml)
+tells us which rows are still true on which machine — including the games below that only run screen-only today, and the
+revisions we have never seen.
 
 | Game | ROM code | Agent | Walkthrough | Rollback-safe | Verified |
 |---|---|---|---|---|---|

@@ -1,0 +1,11 @@
+# Funding: uncomment the entries you actually use. GitHub shows the Sponsor button only when at least one is set.
+#
+# github: [SamurAI-Official]
+# patreon: your-handle
+# ko_fi: your-handle
+# open_collective: your-collective
+# custom: ["https://example.com/sponsor"]
+#
+# What money would buy here, in order of usefulness: emulator hardware and a spare machine to run the ROM-gated test
+# suites on (see docs/testing.md), Apple Developer signing so the macOS build stops tripping Gatekeeper, and the API
+# budget that makes the recorded runs (and their cost tables) comparable.
