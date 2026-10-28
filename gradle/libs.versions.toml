@@ -9,9 +9,10 @@ slf4j = "2.0.17"
 mcp = "0.15.0"
 ktor = "3.5.1"
 kover = "0.9.11"
-# dev.kotlinds:pokemon-client (github.com/kotlinds/pokemon-client): the fork's -SNAPSHOT, published to GitHub Packages
-# by SamurAI-Official/pokemon-client (see settings.gradle.kts and README → Building from a clean clone); a snapshot
-# published locally with `publishToMavenLocal` is used first while developing.
+# dev.kotlinds:pokemon-client{,-libretro,-rollback} and dev.kotlinds:libretro-rollback: they are submodules of this
+# repository (client/pokemon-client, engine/libretro-rollback) and Gradle substitutes these dependencies with the
+# projects it builds from them (see settings.gradle.kts), so the version below is only what a version catalog requires
+# — it is never resolved from a repository. `./gradlew testAll` runs their tests too.
 pokemon-client = "0.1.2-SNAPSHOT"
 
 [libraries]

@@ -12,8 +12,7 @@ on:
         required: true
 
 permissions:
-  contents: write # upload artifacts to the release
-  packages: read # dev.kotlinds artifacts come from GitHub Packages (see settings.gradle.kts)
+  contents: write # upload artifacts to the release; nothing else: the submodules are built from source
 
 jobs:
   jar:
@@ -22,10 +21,13 @@ jobs:
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
+      # The submodules are what the release is built from: the tag pins them (engine/libretro-rollback,
+      # client/pokemon-client), so a release is exactly the stack its tag names.
       - name: Checkout the release's tag
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+          submodules: recursive
 
       - name: Set up the JDK
         uses: actions/setup-java@v4
@@ -37,12 +39,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       # -Puniversal ships the UI natives of every desktop platform in the one jar (see build.gradle.kts).
-      # The dev.kotlinds artifacts are the fork's snapshots, resolved from GitHub Packages with the token above (a
-      # release is built from the state the tag was cut on, which is that fork).
       - name: Test and build the universal JAR
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew test packageUberJarForCurrentOS -Puniversal
 
       - name: Attach the JAR and its checksum
@@ -69,6 +66,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+          submodules: recursive
 
       - name: Set up the JDK
         uses: actions/setup-java@v4
@@ -78,11 +76,6 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Use the released pokemon-client
-        run: |
-          sed -i '' -E 's/^(pokemon-client = "[^"]+)-SNAPSHOT"/\1"/' gradle/libs.versions.toml
-          grep '^pokemon-client = ' gradle/libs.versions.toml
 
       # The JAR job runs the full suite; keep packaging separate from timing-sensitive tests on shared macOS runners.
       # packageDmg includes a Java runtime, so recipients do not need to install Java separately.

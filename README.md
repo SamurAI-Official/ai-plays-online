@@ -113,38 +113,23 @@ A ROM on the command line (`./gradlew startApp -PappArgs="/path/to/game.nds"`) o
 
 ### Building from a clean clone
 
-Most dependencies come from Maven Central, but four artifacts are **ours** and are published to GitHub Packages by
-their own repositories:
-
-| Artifact | Published by | Why not Central |
-| --- | --- | --- |
-| `dev.kotlinds:libretro-rollback:0.1.0-SNAPSHOT` | `SamurAI-Official/libretro-rollback` (`.github/workflows/publish.yml`) | it is our engine; upstream has no such artifact |
-| `dev.kotlinds:pokemon-client{,-libretro,-rollback}:0.1.2-SNAPSHOT` | `SamurAI-Official/pokemon-client` (same workflow) | `-SNAPSHOT`s are never on Central, and `pokemon-client-rollback` is ours (netplay) |
-
-GitHub Packages needs a token **even to read**, so a clean clone builds once you give Gradle one with
-`read:packages` — either in the environment:
+Nothing to set up beyond Java 21. The four artifacts that are **ours** — the rollback engine, and the game client with
+its libretro and rollback adapters — are **submodules** of this repository, and Gradle builds them from source as part
+of this build (`includeBuild`, see `settings.gradle.kts`). Everything else comes from Maven Central.
 
 ```bash
-export GITHUB_TOKEN=$(gh auth token)     # the token needs the read:packages scope
+git clone --recursive https://github.com/SamurAI-Official/ai-plays-online.git
+cd ai-plays-online
 ./gradlew test
 ```
 
-or in `~/.gradle/gradle.properties` (used when the environment has nothing):
+Forgot `--recursive`? `git submodule update --init --recursive` fetches them. No token, no published snapshot, no
+`publishToMavenLocal` step — and the tests you run are the ones for the exact commits this repository pins.
+`./gradlew testAll` runs the submodules' own tests too (the engine's, and the client's three modules).
 
-```properties
-gpr.user=SamurAI-Official
-gpr.key=ghp_…                            # a PAT with read:packages
-```
-
-CI needs nothing extra: its own `GITHUB_TOKEN` has `packages: read` (see `.github/workflows/build.yml`), which is how
-every push proves the clean-clone build still works.
-
-Working on one of those repositories instead? Publish it locally and `mavenLocal()` (tried first) wins:
-
-```bash
-cd ../libretro-rollback && ./scripts/publish-libretro-rollback.sh   # the engine
-cd ../pokemon-client     && ./gradlew publishToMavenLocal           # the client and its adapters
-```
+Working *on* one of those libraries (or trying a change before committing it)? Edit the checkout under
+`client/pokemon-client` or `engine/libretro-rollback`: this build uses it directly. `mavenLocal()` is tried first as
+well, so `./gradlew publishToMavenLocal` in there still wins if you prefer that route.
 
 
 ## The launcher (macOS)
@@ -309,12 +294,11 @@ parameters active, so fast enough on a laptop; small local models play poorly, c
 ./gradlew run --args="/path/to/your game.nds"
 ```
 
-Gradle downloads the libraries from Maven Central (libretro-kmp and
-[pokemon-client](https://github.com/kotlinds/pokemon-client) included). While the app depends on a `-SNAPSHOT` of
-pokemon-client (see `gradle/libs.versions.toml`), clone that repository too and run `./gradlew publishToMavenLocal`
-in it first. To build the jar that runs on every platform yourself: `./gradlew packageUberJarForCurrentOS
--Puniversal`, written to `build/compose/jars/` (the name carries the platform it was built on, but `-Puniversal` adds
-the other platforms' natives).
+Gradle downloads the libraries from Maven Central, and builds the ones that are ours — the engine and
+[pokemon-client](https://github.com/SamurAI-Official/pokemon-client) with its adapters — from the submodules this
+repository pins (see [Building from a clean clone](#building-from-a-clean-clone)). To build the jar that runs on every
+platform yourself: `./gradlew packageUberJarForCurrentOS -Puniversal`, written to `build/compose/jars/` (the name
+carries the platform it was built on, but `-Puniversal` adds the other platforms' natives).
 
 ## Files and the emulator core
 
@@ -504,8 +488,8 @@ pinned hashes of the builds we tested. See [`NOTICE`](NOTICE) for the full attri
  └────────────────────────────────────────────────────────────────────────┘
 ```
 
-The app, and the [pokemon-client](https://github.com/kotlinds/pokemon-client) library (its own repository, on Maven
-Central; a `-SNAPSHOT` from `mavenLocal()` while developing):
+The app, and the [pokemon-client](https://github.com/SamurAI-Official/pokemon-client) library (a submodule of this
+repository, built from source; upstream's own is on Maven Central):
 
 - **`pokemon-client`** (Kotlin Multiplatform, as much as possible in `commonMain`) is the library: it knows Pokémon,
   not emulators. A game reads the RAM into one common, typed model: `GameState` with a sealed `Screen` (every menu

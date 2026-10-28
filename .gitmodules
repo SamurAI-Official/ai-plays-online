@@ -1,3 +1,6 @@
 [submodule "engine/libretro-rollback"]
 	path = engine/libretro-rollback
 	url = https://github.com/SamurAI-Official/libretro-rollback.git
+[submodule "client/pokemon-client"]
+	path = client/pokemon-client
+	url = https://github.com/SamurAI-Official/pokemon-client.git

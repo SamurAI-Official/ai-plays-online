@@ -136,5 +136,6 @@ Start it with no network: it must say so clearly instead of crashing.
   on a self-hosted runner that has the ROMs.
 - **Nothing here judges how well an AI plays**, only that the loop, the wiring and the timing are sound. That is what
   test reports are for.
-- Building from a clean clone is being moved to a **composite build** (the libraries built from their submodules), so
-  that no credentials are needed at all; until that lands, the README's token instructions still apply.
+- **A clean clone needs no credentials**: the libraries are submodules built from source by `./gradlew test`, and
+  `./gradlew testAll` runs their own tests too. The publish workflows that used to feed GitHub Packages are unused by
+  this build now; they stay until we are sure nothing else consumes those snapshots.

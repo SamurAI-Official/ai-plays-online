@@ -13,8 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  packages: read # dev.kotlinds:libretro-rollback and the pokemon-client fork
+  contents: read # nothing else: the build resolves everything from Maven Central and the submodules below
 
 concurrency:
   # A new push to the same branch makes the previous run pointless.
@@ -30,7 +29,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
     steps:
+      # The engine and the client are submodules and are built from source: without them the build cannot resolve
+      # dev.kotlinds (see settings.gradle.kts).
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up the JDK
         uses: actions/setup-java@v4
@@ -43,9 +46,6 @@ jobs:
 
       # pipefail, or a failing `test` would be hidden by a successful `tee`.
       - name: Test
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
           ./gradlew --no-daemon test 2>&1 | tee test-output.txt
@@ -76,6 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up the JDK
         uses: actions/setup-java@v4
@@ -89,9 +91,6 @@ jobs:
       # -Puniversal ships the UI natives of every desktop platform in the one jar: what a release attaches, built here
       # so packaging breakage is caught on the pull request that caused it rather than at release time.
       - name: Build the universal JAR
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew --no-daemon packageUberJarForCurrentOS -Puniversal
 
       - name: Keep the JAR

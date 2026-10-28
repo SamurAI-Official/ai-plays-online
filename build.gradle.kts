@@ -89,6 +89,20 @@ tasks.test {
     }
 }
 
+// One command for the whole stack: this app's tests, and the tests of the libraries it pins as submodules (the rollback
+// engine, and the game client with its libretro and rollback adapters). A change in a submodule is only trustworthy
+// once its own tests pass too — hence the mixed task names: the multiplatform modules run `allTests`, and the JVM-only
+// rollback adapter runs `test`.
+tasks.register("testAll") {
+    description = "Runs the app's tests and the tests of the included builds (engine and client)."
+    group = "verification"
+    dependsOn(tasks.named("test"))
+    dependsOn(gradle.includedBuild("libretro-rollback").task(":libretro-rollback:allTests"))
+    dependsOn(gradle.includedBuild("pokemon-client").task(":pokemon-client:allTests"))
+    dependsOn(gradle.includedBuild("pokemon-client").task(":pokemon-client-libretro:allTests"))
+    dependsOn(gradle.includedBuild("pokemon-client").task(":pokemon-client-rollback:test"))
+}
+
 // Development helper: runs any main class of the project, e.g.
 // ./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.SomeToolKt -PdevArgs="a|b|c"
 tasks.register<JavaExec>("devRun") {

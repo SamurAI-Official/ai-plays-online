@@ -10,28 +10,24 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        // A -SNAPSHOT published locally while developing wins over the published ones (`./gradlew publishToMavenLocal`
-        // in a pokemon-client checkout).
+        // A -SNAPSHOT published locally while developing wins over everything (`./gradlew publishToMavenLocal` in a
+        // pokemon-client checkout) — the escape hatch for trying a change in one of the submodules without committing.
         mavenLocal()
-        // Our own artifacts, published by their own repositories' workflows: dev.kotlinds:libretro-rollback (the
-        // rollback engine) and dev.kotlinds:pokemon-client{,-libretro,-rollback} (the fork the netplay work needs).
-        // They are not on Maven Central (a -SNAPSHOT never is, and the engine and the rollback adapter are ours), so a
-        // clean clone resolves them here: GitHub Packages needs a token with `read:packages` (`GITHUB_TOKEN` in CI,
-        // `gpr.user`/`gpr.key` in ~/.gradle/gradle.properties locally). See README → Building from a clean clone.
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/SamurAI-Official/ai-plays-online")
-            content { includeGroup("dev.kotlinds") }
-            credentials {
-                // A settings script has no `findProperty`: the providers API is how the same names are read here.
-                username = System.getenv("GITHUB_ACTOR") ?: providers.gradleProperty("gpr.user").orNull
-                password = System.getenv("GITHUB_TOKEN") ?: providers.gradleProperty("gpr.key").orNull
-            }
-        }
         google()
         mavenCentral()
     }
 }
+
+// The stack this app is built on, from source: the rollback engine, and the game client with its libretro and rollback
+// adapters. They are **submodules**, and Gradle builds them as part of this build (an `includeBuild` substitutes them
+// for the dependencies declared in gradle/libs.versions.toml, whatever version that file names). That is what makes a
+// clean clone testable by anyone: no token, no published snapshot, no `publishToMavenLocal` step — and the tests you
+// run are the ones for the exact commits this repository pins.
+//
+// The engine and the rollback adapter are ours (they are not on Maven Central); `libretro-kmp`, which the client
+// depends on, does come from Maven Central, so it is not vendored here.
+includeBuild("engine/libretro-rollback")
+includeBuild("client/pokemon-client")
 
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
