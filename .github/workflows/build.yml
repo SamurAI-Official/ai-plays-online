@@ -1,5 +1,9 @@
-# Builds the app on every push and pull request: what proves a clean clone works — no mavenLocal on a runner, so the
-# dev.kotlinds artifacts come from GitHub Packages (see settings.gradle.kts), which needs `packages: read`.
+# Builds and tests the app on every push and pull request: what proves a clean clone works — no mavenLocal on a
+# runner, so the dev.kotlinds artifacts come from GitHub Packages (see settings.gradle.kts), which needs `packages: read`.
+#
+# Two platforms, because the app ships for all of them: Linux catches most of it, macOS is where the cores, the
+# launcher and the DMG actually run. No ROM exists here, so the ROM-gated suites are skipped — the run lists them, with
+# their reasons, in its summary (see docs/testing.md).
 name: build
 
 on:
@@ -12,9 +16,63 @@ permissions:
   contents: read
   packages: read # dev.kotlinds:libretro-rollback and the pokemon-client fork
 
+concurrency:
+  # A new push to the same branch makes the previous run pointless.
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Test
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # one platform failing must not hide the other's result
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up the JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # pipefail, or a failing `test` would be hidden by a successful `tee`.
+      - name: Test
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon test 2>&1 | tee test-output.txt
+
+      # What did not run matters as much as what did: the gated suites need a ROM, which cannot be here. Gradle's log
+      # only names a skip, so the reasons are read from the JUnit XML and put in the run's summary.
+      - name: Say what was skipped
+        if: always()
+        run: |
+          {
+            echo "### Tests skipped on ${{ matrix.os }}"
+            echo
+            python3 .github/scripts/skipped-tests.py
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: |
+            build/test-results/test/*.xml
+            test-output.txt
+          if-no-files-found: warn
+
+  package:
+    name: Universal JAR
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +86,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Test
+      # -Puniversal ships the UI natives of every desktop platform in the one jar: what a release attaches, built here
+      # so packaging breakage is caught on the pull request that caused it rather than at release time.
+      - name: Build the universal JAR
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew --no-daemon test
+        run: ./gradlew --no-daemon packageUberJarForCurrentOS -Puniversal
+
+      - name: Keep the JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-jar
+          path: build/compose/jars/*.jar
+          if-no-files-found: warn
