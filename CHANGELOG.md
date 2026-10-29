@@ -35,6 +35,10 @@ Notable changes, newest first. Releases are on
 ### Fixed
 
 - `./gradlew test` says how many tests were skipped, so a green run cannot hide a path that did not run.
+- **The packaged app's version follows the tag.** It was hardcoded next to the project version, so a release would have
+  been rejected by its own check (the DMG's version must match the tag) — after the JAR had already been built. An RC
+  tag (`v1.0.2-rc1`) packages as `1.0.2`, because macOS and Windows only accept `MAJOR.MINOR.BUILD`; run
+  `scripts/verify-release-dmg.sh v1.0.2-rc1` to rehearse the whole thing before tagging.
 
 ## 1.0.1
 

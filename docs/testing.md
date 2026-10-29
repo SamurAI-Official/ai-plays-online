@@ -21,14 +21,23 @@ What is covered, what a run prints, and what a machine with a ROM can do that CI
 
 ## What CI runs
 
-`.github/workflows/build.yml` runs `./gradlew test` on every push and pull request, on Ubuntu and macOS. It has no ROM,
-so the **gated** suites below are *skipped* there — and the run prints them, with the reason, so a green CI never hides
-a path that did not run:
+`.github/workflows/build.yml` runs `./gradlew testAll` on every push and pull request, on Ubuntu and macOS: the app's
+tests **and** the ones for the libraries it builds from the submodules (the engine, and the client with its adapters).
+It has no ROM, so the **gated** suites below are *skipped* there — and the run says so, twice over: Gradle's log names
+each skip,
 
 ```
-Some tests were skipped: 18
-  emulator.NetplaySessionTest.twoPeersSynchronizeAndRunFramesOverUdp — NETPLAY_TEST_ROM is not set (…)
-  …
+NetplayDriverTest > twoDriversSynchronizeAndRunTheSameFrames() SKIPPED
+AppControllerTest > thePauseKeyStopsTheGameAndPutsItBack() SKIPPED
+```
+
+and the run's summary lists all of them with the reason (read from the JUnit XML, which is also uploaded):
+
+```
+190 test(s) did not run:
+
+- `NetplayDriverTest.twoDriversSynchronizeAndRunTheSameFrames()` — NETPLAY_TEST_ROM is not set (this test needs a ROM to drive two peers on)
+- `RomNarrationCheckTest.aDecisionOnTheRealGameIsSaidByTheVoice()` — NARRATION_ROM is not set (this test needs a HeartGold ROM to build a real decision on)
 ```
 
 The JUnit XML and that list are uploaded as a build artifact, so you can read what a run did not cover.
