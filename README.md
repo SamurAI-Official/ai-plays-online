@@ -147,6 +147,10 @@ git tag v1.0.2-rc1 && git push samurai v1.0.2-rc1
 gh release create v1.0.2-rc1 --prerelease --generate-notes     # testers first
 ```
 
+Before tagging, rehearse it: `scripts/verify-release-dmg.sh v1.0.2-rc1` builds the macOS app for that tag and runs the
+same assertions the release does — architecture, bundle id, version, category, and the runtime modules the core
+downloader needs (the 1.0.1 release broke on exactly that last point, and nothing else would have caught it).
+
 Publish it as a **pre-release** while it is meant for testers: GitHub then keeps "latest" — and the download badge —
 on the last stable release. Drop `--prerelease` when it is ready for everyone.
 

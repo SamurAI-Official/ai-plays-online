@@ -45,20 +45,27 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       # pipefail, or a failing `test` would be hidden by a successful `tee`.
+      #
+      # testAll, not test: the libraries are built from source here, so their tests are part of what this commit is —
+      # and a submodule bump (Dependabot proposes those) must not be able to break a library's tests and still pass.
       - name: Test
         run: |
           set -o pipefail
-          ./gradlew --no-daemon test 2>&1 | tee test-output.txt
+          ./gradlew --no-daemon testAll 2>&1 | tee test-output.txt
 
       # What did not run matters as much as what did: the gated suites need a ROM, which cannot be here. Gradle's log
-      # only names a skip, so the reasons are read from the JUnit XML and put in the run's summary.
+      # only names a skip, so the reasons are read from the JUnit XML and put in the run's summary — the app's results
+      # and the three libraries' alike.
       - name: Say what was skipped
         if: always()
         run: |
           {
             echo "### Tests skipped on ${{ matrix.os }}"
             echo
-            python3 .github/scripts/skipped-tests.py
+            python3 .github/scripts/skipped-tests.py \
+              "build/test-results/**/*.xml" \
+              "client/pokemon-client/*/build/test-results/**/*.xml" \
+              "engine/libretro-rollback/*/build/test-results/**/*.xml"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the test results
@@ -67,7 +74,9 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: |
-            build/test-results/test/*.xml
+            build/test-results/**/*.xml
+            client/pokemon-client/*/build/test-results/**/*.xml
+            engine/libretro-rollback/*/build/test-results/**/*.xml
             test-output.txt
           if-no-files-found: warn
 

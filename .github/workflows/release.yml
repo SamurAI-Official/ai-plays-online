@@ -91,7 +91,11 @@ jobs:
           plist="$app/Contents/Info.plist"
           file "$app/Contents/MacOS/AI Plays Online" | grep -q 'arm64'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "me.nathanfallet.aiplaysonline"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "${TAG#v}"
+          # Installers only take MAJOR.MINOR.BUILD, so a pre-release tag (v1.0.2-rc1) packages as 1.0.2: compare the
+          # numeric part, which is also what build.gradle.kts puts in the bundle.
+          expected_version="${TAG#v}"
+          expected_version="${expected_version%%-*}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "$expected_version"
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$plist")" = "public.app-category.games"
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = "11.0"
 

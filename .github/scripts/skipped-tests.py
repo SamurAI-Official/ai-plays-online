@@ -36,8 +36,12 @@ def skipped(paths):
 
 
 def main() -> None:
-    pattern = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_RESULTS
-    rows = list(skipped(glob.glob(pattern, recursive=True)))
+    # Several globs, because a run that covers the whole stack (the app plus the libraries built from the submodules)
+    # has its results in several places.
+    patterns = sys.argv[1:] or [DEFAULT_RESULTS]
+    rows = []
+    for pattern in patterns:
+        rows.extend(skipped(glob.glob(pattern, recursive=True)))
     if not rows:
         print("Nothing was skipped.")
         return

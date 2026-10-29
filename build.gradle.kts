@@ -9,13 +9,15 @@ plugins {
 }
 
 group = "me.nathanfallet.aiplayspokemon"
-// The release workflow checks the packaged app's version against the tag it was built from, so a release must not
-// depend on someone remembering to bump this line: on a tag (`v1.0.2`, or `v1.0.2-rc1` for a pre-release) the tag is
-// the version. Everything else — local builds, pull requests — keeps the version above.
-version = System.getenv("GITHUB_REF_NAME")
+// The release workflow checks the packaged app's version against the tag it was built from, so nothing here may be
+// hardcoded: on a tag (`v1.0.2`, or `v1.0.2-rc1` for a pre-release) the tag is the version. Everything else — local
+// builds, pull requests — keeps the default. The packaged app's `packageVersion` reads the same value: they are two
+// places that must agree, and a release fails loudly when they do not.
+val appVersion = System.getenv("GITHUB_REF_NAME")
     ?.takeIf { System.getenv("GITHUB_REF_TYPE") == "tag" && it.startsWith("v") }
     ?.removePrefix("v")
     ?: "1.0.1"
+version = appVersion
 
 kotlin {
     jvmToolchain(21)
@@ -70,7 +72,10 @@ compose.desktop {
             // Keep in sync with `./gradlew suggestRuntimeModules`; java.net.http is required for first ROM launch.
             modules("java.instrument", "java.management", "java.net.http", "jdk.unsupported")
             packageName = "AI Plays Online"
-            packageVersion = "1.0.1"
+            // macOS and Windows installers only take MAJOR.MINOR.BUILD, so a pre-release tag (`v1.0.2-rc1`) packages as
+            // `1.0.2`: the tag carries the marker, the bundle version stays numeric (the release workflow checks it
+            // against the same numeric part).
+            packageVersion = appVersion.substringBefore('-')
             macOS {
                 bundleID = "me.nathanfallet.aiplaysonline"
                 dockName = "AI Plays Online"
