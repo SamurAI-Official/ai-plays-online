@@ -91,10 +91,42 @@ class ScreenState {
     private val readHashes = mutableMapOf<Screens.Screen, Long>()
     private val readKinds = mutableMapOf<Screens.Screen, String>()
 
+    /** The pictures this session has named, and the hashes each name was given to (see [identity]). */
+    private val identities = mutableMapOf<String, Pair<Long, Long>>()
+
     /** Forgets everything: a new game, or a chapter changed by hand. */
     fun reset() {
         readHashes.clear()
         readKinds.clear()
+        identities.clear()
+    }
+
+    /**
+     * The picture's own name, for a game whose reader reads **no values at all** — a screen-only game, where nothing
+     * else can say which screen the game is on.
+     *
+     * Two frames that look the same get the same name, within the tolerance the landmark matcher uses, so a blinking
+     * cursor or an animated HUD does not invent a screen every time it changes. The name is the picture's own hashes,
+     * so it means the same thing in the next session: what a run learned about a screen still applies when it comes
+     * back to it.
+     */
+    fun identity(frame: Frame?): String {
+        if (frame == null) return UNKNOWN
+        return identity(Screens.hashOf(frame, Screens.Screen.TOP), Screens.hashOf(frame, Screens.Screen.BOTTOM))
+    }
+
+    /**
+     * [identity] of a picture the caller has already hashed — what the player uses, since the hashes it saw *while the
+     * action ran* are the authoritative ones (the frame published for the UI is not always the frame the game is on).
+     */
+    fun identity(top: Long, bottom: Long): String {
+        identities.entries.firstOrNull { (_, seen) ->
+            FrameHash.distance(seen.first, top) <= SAME_PICTURE_BITS &&
+                FrameHash.distance(seen.second, bottom) <= SAME_PICTURE_BITS
+        }?.let { named -> return named.key }
+        val name = "picture:%016x:%016x".format(top, bottom)
+        identities[name] = top to bottom
+        return name
     }
 
     /**
@@ -188,6 +220,12 @@ class ScreenState {
 
         /** A screen unchanged for this many frames is a game waiting for input (a second at 60 fps). */
         const val WAITING_FRAMES = 60
+
+        /**
+         * How many bits two frames may differ by and still be the same picture, for [identity]: the same tolerance the
+         * landmark matcher and the player's stability check use, so a blinking cursor is not a different screen.
+         */
+        const val SAME_PICTURE_BITS = 6
 
         /** The kinds of screen a DS game shows, in the words the agent needs to act on them. */
         val SCREENS = mapOf(

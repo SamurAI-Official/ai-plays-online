@@ -25,6 +25,7 @@ import me.nathanfallet.aiplayspokemon.emulator.ConsoleHost
 import me.nathanfallet.aiplayspokemon.emulator.toKotlinxPath
 import me.nathanfallet.aiplayspokemon.games.GameCatalog
 import me.nathanfallet.aiplayspokemon.games.ReaderCatalog
+import me.nathanfallet.aiplayspokemon.games.ReaderSpec
 import me.nathanfallet.aiplayspokemon.sha256OfRom
 import java.nio.file.Files
 import java.nio.file.Path
@@ -61,8 +62,12 @@ fun main(args: Array<String>) = runBlocking {
         GameCatalog.detect(GameCatalog.headerOf(rom), config.dataDirectory),
         config.dataDirectory,
     )
+    // A game with no reader is playable too, and this is the path the app takes for it: an empty reader, so the same
+    // loop runs and the screen viewer (with the picture naming the screens, see ScreenState.identity) does the seeing.
+    // Without this the screen-only path — the one a ROM with no calibrated reader takes — could not be driven headlessly
+    // at all, which is how a loop in it went unnoticed.
     val reader = ReaderCatalog.of(profile, config.dataDirectory)
-        ?: error("${profile.title} has no reader: calibrate one first (docs/readers.md)")
+        ?: ReaderSpec(id = profile.id, provenance = "screen")
     val emulator = ConsoleHost(
         LibretroCoreSpec.forRom(rom.toKotlinxPath(), config.emulatorCore ?: core),
         rom,

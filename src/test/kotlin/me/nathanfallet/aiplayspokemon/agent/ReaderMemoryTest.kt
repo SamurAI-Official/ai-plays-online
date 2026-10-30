@@ -180,4 +180,80 @@ class ReaderMemoryTest {
         memory.updateNote("x".repeat(100))
         assertEquals(20, memory.note?.length)
     }
+
+    /**
+     * The bug this was written for: in a **screen-only** game (a reader that reads no values at all — Phantasy Star 0,
+     * or any ROM with no calibrated reader yet) every screen used to be the same screen as far as the memory was
+     * concerned, so the model was told "you already tried this here, and nothing happened" about actions tried on
+     * *other* screens. On a menu that is exactly the wrong thing to hear: the actions that leave it are the ones it is
+     * being talked out of, and the agent settles into pressing the same thing forever.
+     *
+     * The player names the screen by the picture then ([ScreenState.identity]); the memory must keep two screens apart.
+     */
+    @Test
+    fun aScreenOnlyGameKeepsTwoScreensApart() {
+        val memory = ReaderMemory()
+        val field = "picture:0f0f0f0f0f0f0f0f:1234567890abcdef"
+        val menu = "picture:abcdef0123456789:fedcba0987654321"
+        // One action taken on the field (it opened the menu), one taken on the menu (it left it).
+        memory.recordStep("press_a", emptyMap(), emptyMap(), "the picture changed", here = field, landedOn = menu)
+        memory.recordStep("press_b", emptyMap(), emptyMap(), "the picture changed", here = menu, landedOn = field)
+
+        val data = ReaderMemoryPayload.decode(memory.toSession("screen-only", "hash").payload)
+        assertEquals(
+            listOf("press_a"),
+            data.outcomes.filter { it.screen == field }.map { it.action },
+            "the field knows what was tried on the field, and nothing else",
+        )
+        assertEquals(listOf("press_b"), data.outcomes.filter { it.screen == menu }.map { it.action })
+        assertEquals(
+            listOf(field),
+            data.outcomes.single { it.screen == menu }.destinations.keys.toList(),
+            "and where that action led",
+        )
+
+        // What the prompt says while the game is on the menu: one thing tried, not everything ever tried anywhere.
+        val tried = memory.describe(emptyMap(), here = menu)["what_you_tried_here"]!!.jsonArray
+            .map { it.jsonObject["action"]!!.jsonPrimitive.content }
+        assertEquals(listOf("press_b"), tried)
+    }
+
+    @Test
+    fun withoutAPictureNameAScreenOnlyGameIsOneScreen() {
+        // What the app did before the picture named screens: no `screen` value and nothing else to go on, so every
+        // screen of the game is `unknown` — the trap the test above exists to prevent.
+        val memory = ReaderMemory()
+        memory.recordStep("press_a", emptyMap(), emptyMap(), "the picture changed")
+        memory.recordStep("press_b", emptyMap(), emptyMap(), "the picture changed")
+        val data = ReaderMemoryPayload.decode(memory.toSession("screen-only", "hash").payload)
+        assertEquals(listOf("unknown"), data.outcomes.map { it.screen }.distinct())
+    }
+
+    /**
+     * The other half of the same bug: a screen-only game's reader reads nothing, so `change` is *always* "nothing
+     * changed" — and the memory used that to decide whether an action moved, so the map of the game stayed empty and
+     * the model was never told where an action led. The player now says it saw the picture move.
+     */
+    @Test
+    fun aScreenOnlyGameRecordsWhereAnActionLed() {
+        val memory = ReaderMemory()
+        val field = "picture:1111111111111111:2222222222222222"
+        val menu = "picture:3333333333333333:4444444444444444"
+        memory.recordStep(
+            "press_a",
+            emptyMap(),
+            emptyMap(),
+            ReaderActions.NOTHING_CHANGED,
+            here = field,
+            landedOn = menu,
+        )
+        val data = ReaderMemoryPayload.decode(memory.toSession("screen-only", "hash").payload)
+        assertEquals(mapOf(menu to 1), data.outcomes.single().destinations, "the edge of the map is kept")
+
+        val fromHere = ReaderAffordances.describe(ReaderAffordances.Known(data.outcomes), field, null)
+            ?.get("from_here")?.jsonArray
+            ?.map { it.jsonObject["action"]!!.jsonPrimitive.content }
+            .orEmpty()
+        assertEquals(listOf("press_a"), fromHere, "and the map the model is shown has that edge")
+    }
 }

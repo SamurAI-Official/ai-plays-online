@@ -194,6 +194,45 @@ class ScreenStateTest {
         assertNull(state.view(null, null, emptyMap()).landmark)
     }
 
+    /**
+     * A game whose reader reads **no values at all** has no `screen` value to be keyed by: the picture names itself
+     * ([ScreenState.identity]), and that is what keeps the memory from treating every screen of such a game as one —
+     * the reason an agent can otherwise loop on the same menu forever (see ReaderMemoryTest).
+     */
+    @Test
+    fun thePictureNamesItselfAndALookalikeIsTheSameScreen() {
+        val state = ScreenState()
+        val field = dsFrame(FLAT, RAMP)
+        val menu = dsFrame(RAMP, FLAT)
+
+        val fieldName = state.identity(field)
+        assertTrue(fieldName.startsWith("picture:"), fieldName)
+        assertEquals(fieldName, state.identity(field), "the same picture keeps its name")
+
+        val menuName = state.identity(menu)
+        assertTrue(menuName != fieldName, "a different picture is a different screen (both named $fieldName)")
+        assertTrue(menuName.startsWith("picture:"), menuName)
+
+        // A cursor blinking on the field is one pixel: a few bits at most, so the same screen, not a new one.
+        assertEquals(fieldName, state.identity(blink(field)), "a blinking cursor must not invent a screen")
+
+        // The name is the picture's own hashes, so another session names the same screen the same way: what a run
+        // learned about a screen still applies when it comes back to it.
+        assertEquals(fieldName, ScreenState().identity(field))
+        assertEquals(
+            "unknown",
+            ScreenState().identity(null),
+            "no picture at all: the same name the reader falls back to, so nothing is invented",
+        )
+    }
+
+    /** [frame] with one pixel changed: what a blinking cursor does to a picture. */
+    private fun blink(frame: Frame): Frame {
+        val pixels = frame.pixels.copyOf()
+        pixels[0] = 0xFFFFFFFF.toInt()
+        return Frame(frame.width, frame.height, pixels)
+    }
+
     private companion object {
         /** Flat picture: its hash is all zeros. */
         const val FLAT = 0

@@ -151,4 +151,24 @@ class ReaderAffordancesTest {
         )
         assertNull(ReaderAffordances.describe(ReaderAffordances.Known(emptyList()), "boot (0)", "84"))
     }
+
+    /**
+     * The screen a game is keyed by, when its reader reads nothing at all (a screen-only game): the picture names it,
+     * and the reader keeps naming screens when it does read a `screen` value — the picture is only a fallback.
+     */
+    @Test
+    fun aReaderThatReadsNothingIsNamedByItsPicture() {
+        assertEquals("picture:aa:bb", ReaderAffordances.screenOf(emptyMap(), picture = "picture:aa:bb"))
+        assertEquals("unknown", ReaderAffordances.screenOf(emptyMap()), "no reader and no picture: nothing to go on")
+        assertEquals(
+            "main menu (19)",
+            ReaderAffordances.screenOf(mapOf("screen" to "main menu (19)"), picture = "picture:aa:bb"),
+            "a reader that names screens keeps naming them",
+        )
+        assertEquals(
+            "mode 2",
+            ReaderAffordances.screenOf(mapOf("mode" to "2"), picture = "picture:aa:bb"),
+            "a reader that reads values without naming a screen is keyed by them, not by the picture",
+        )
+    }
 }

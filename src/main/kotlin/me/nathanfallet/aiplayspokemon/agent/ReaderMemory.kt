@@ -115,13 +115,27 @@ class ReaderMemory(
      * Records one **step** of a decision: what [action] did on the screen [before] shows, and where it left the game
      * ([after]). This is the evidence the map of the game is built from ([ReaderAffordances]), one edge per action — a
      * decision that ran a plan of three steps is three edges, not one.
+     *
+     * [here] and [landedOn] are how the *player* names those two screens, for a game whose reader reads no values at
+     * all: there the picture is the identity ([ScreenState.identity]), and the values cannot say it. Without them the
+     * keys come from the values, as they always did.
      */
-    fun recordStep(action: String, before: Map<String, String>, after: Map<String, String>, change: String) {
-        val screen = screenOf(before)
+    fun recordStep(
+        action: String,
+        before: Map<String, String>,
+        after: Map<String, String>,
+        change: String,
+        here: String? = null,
+        landedOn: String? = null,
+    ) {
+        val screen = here ?: screenOf(before)
         val key = "$screen|$action"
         val previous = outcomes.remove(key)
-        // Where it led, as data: the map of the game is built from this, not from the text of the change.
-        val landed = screenOf(after).takeIf { change != NOTHING_CHANGED }
+        // Where it led, as data: the map of the game is built from this, not from the text of the change. The caller's
+        // answer wins when it gave one — a screen-only game's picture changing *is* the movement, and its reader reads
+        // nothing, so `change` there is always "nothing changed" and the map would stay empty forever.
+        val moved = change != NOTHING_CHANGED || landedOn != null
+        val landed = if (moved) landedOn ?: screenOf(after) else null
         val destinations = previous?.destinations.orEmpty().let { known ->
             if (landed == null) known else known + (landed to (known[landed] ?: 0) + 1)
         }
@@ -141,9 +155,16 @@ class ReaderMemory(
      * action on the same screen is grouped instead of piling up, and counted: "press_a here did this, three times" is
      * what tells a model whether a dead end is worth trying again.
      */
-    fun record(action: String, before: Map<String, String>, after: Map<String, String>, change: String, historyLine: String) {
+    fun record(
+        action: String,
+        before: Map<String, String>,
+        after: Map<String, String>,
+        change: String,
+        historyLine: String,
+        here: String? = null,
+    ) {
         decisions++
-        screens.merge(screenOf(before), 1, Int::plus)
+        screens.merge(here ?: screenOf(before), 1, Int::plus)
         history.addLast(historyLine)
         while (history.size > maxHistory) history.removeFirst()
         decisionsWithoutProgress = if (change == NOTHING_CHANGED) decisionsWithoutProgress + 1 else 0
@@ -156,10 +177,13 @@ class ReaderMemory(
         if (!value.isNullOrBlank()) note = value.take(maxNote)
     }
 
-    /** What the player tells the model about its own memory, as the prompt's `memory` block. */
-    fun describe(current: Map<String, String>): JsonObject {
-        val here = screenOf(current)
-        val triedHere = outcomes.values.filter { it.screen == here }
+    /**
+     * What the player tells the model about its own memory, as the prompt's `memory` block. [here] is the screen the
+     * player is on, when it names it itself (a screen-only game: the picture, see [ReaderMemory.recordStep]).
+     */
+    fun describe(current: Map<String, String>, here: String? = null): JsonObject {
+        val screen = here ?: screenOf(current)
+        val triedHere = outcomes.values.filter { it.screen == screen }
         return buildJsonObject {
             note?.let { put("your_note", it) }
             put("decisions_taken_so_far", totalDecisions)

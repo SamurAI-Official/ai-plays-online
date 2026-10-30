@@ -159,10 +159,18 @@ object ReaderAffordances {
 
     /**
      * The screen [values] shows, as this map is keyed by: the reader's own `screen` value, or every value when the
-     * reader has none (a game whose reader does not name screens still has states worth telling apart).
+     * reader has none (a game whose reader does not name screens still has states worth telling apart), or [picture]
+     * when the reader reads nothing at all.
+     *
+     * That last case is a screen-only game: a reader with no observations cannot tell one screen from another, and
+     * keying every screen of such a game on one constant made the memory lie — it told the model it had already tried
+     * an action *here* when it had tried it on another screen, which is how an agent ends up pressing the same thing
+     * forever. The caller passes the picture's own name then ([ScreenState.identity]).
      */
-    fun screenOf(values: Map<String, String>): String = values[SCREEN_VALUE]
-        ?: values.entries.joinToString(", ") { "${it.key} ${it.value}" }.ifEmpty { UNKNOWN_SCREEN }.take(MAX_SCREEN_KEY)
+    fun screenOf(values: Map<String, String>, picture: String? = null): String = values[SCREEN_VALUE]
+        ?: values.entries.joinToString(", ") { "${it.key} ${it.value}" }
+            .ifEmpty { picture ?: UNKNOWN_SCREEN }
+            .take(MAX_SCREEN_KEY)
 
     /** The reader value that names the screen, which is what this map is keyed by. */
     const val SCREEN_VALUE = "screen"

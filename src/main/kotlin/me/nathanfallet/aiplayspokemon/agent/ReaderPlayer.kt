@@ -114,6 +114,13 @@ class ReaderPlayer(
             }
             val view = screenState.view(frame, chapter, reports)
             _state.update { it.copy(screenRead = view.summary()) }
+            // Which screen the game is on, as the memory and the known map are keyed by. A reader that reads a `screen`
+            // value names it. A game whose reader reads **nothing** — the screen-only path (a ROM with no calibrated
+            // reader yet) — has no such value, and one constant for the whole game made the memory lie: "you already
+            // tried this here and nothing happened" about actions tried on other screens, which is exactly how an
+            // agent settles into pressing the same thing. The picture is the identity then, hashed from the frames the
+            // player last watched (the authoritative ones), and only falling back to the UI's copy on the first turn.
+            val screenKey = ReaderAffordances.screenOf(before, picture = pictureIdentity() ?: screenState.identity(frame))
             // The map of the game as it is known right now: it grows with every decision, so it is read per decision.
             val known = memory.known()
             val request = ChoiceRequest(
@@ -127,7 +134,7 @@ class ReaderPlayer(
                     lastChange = lastChange,
                     history = history.toList(),
                     stagnation = stagnation,
-                    memory = memory.describe(before),
+                    memory = memory.describe(before, here = screenKey),
                     stop = lastStop,
                     // What the player has found out about the game's screens, from the memory it keeps across sessions:
                     // where each action leads from here, what does nothing, and the way to the screen the reader's own
@@ -135,7 +142,7 @@ class ReaderPlayer(
                     affordances = known.let { map ->
                         ReaderAffordances.describe(
                             known = map,
-                            screen = ReaderAffordances.screenOf(before),
+                            screen = screenKey,
                             goal = ReaderAffordances.goal(reader, map),
                         )
                     },
@@ -175,7 +182,14 @@ class ReaderPlayer(
             var stop: ReaderChain.Stop? = null
             // The reader as it stands between the steps of the plan: each step's edge of the map is recorded from it.
             var current = before
+            // The screen each step starts from, named the same way as the decision's own key (see screenKey above): a
+            // screen-only game's picture changes with every step, and that is the point — the map records where a step
+            // led from where it was taken.
+            var currentKey = screenKey
             for ((index, step) in plan.withIndex()) {
+                // The picture the step is taken from: what the player last saw, which is what the step's edge of the
+                // map starts at.
+                val herePicture = pictureIdentity() ?: currentKey
                 val (actionReports, outcome) = perform(step.action)
                 reports = actionReports
                 performed += step.action
@@ -187,10 +201,14 @@ class ReaderPlayer(
                 // is about, and whether anything happened at all (in the reader, or on a screen).
                 val now = observe()
                 val changeHere = ReaderActions.describeChange(current, now)
-                memory.recordStep(step.action, current, now, changeHere)
-                current = now
-                val next = plan.getOrNull(index + 1) ?: break
                 val moved = actionReports.values.any { it.changed } || changeHere != ReaderActions.NOTHING_CHANGED
+                // Where the step landed, when the picture really moved: for a game whose reader reads nothing, that is
+                // the only movement there is (ReaderMemory.recordStep).
+                val landedPicture = pictureIdentity()?.takeIf { moved && it != herePicture }
+                memory.recordStep(step.action, current, now, changeHere, here = herePicture, landedOn = landedPicture)
+                current = now
+                currentKey = landedPicture ?: herePicture
+                val next = plan.getOrNull(index + 1) ?: break
                 stop = ReaderChain.verdict(next, now, moved)?.let { reason ->
                     reason.copy(notDone = plan.drop(index + 1).map { it.described })
                 }
@@ -231,6 +249,7 @@ class ReaderPlayer(
                 after = after,
                 change = change,
                 historyLine = history.last(),
+                here = screenKey,
             )
             memory.updateNote(result.note)
             onMemory?.invoke(memory)
@@ -314,6 +333,18 @@ class ReaderPlayer(
     /** Feeds the frame the console just produced to [block]. */
     private inline fun observeFrame(block: (dev.kotlinds.pokemonclient.console.Frame) -> Unit) {
         emulator.frames.value?.let(block)
+    }
+
+    /**
+     * The identity of the picture the player last saw ([ScreenState.identity] over the hashes of the last frames it
+     * watched while acting). Those are the authoritative ones: the frame published for the UI is not always the frame
+     * the game is on — a headless run may publish one at boot and never again — and a screen-only game's memory is
+     * keyed by this.
+     */
+    private fun pictureIdentity(): String? {
+        val top = lastSeenHashes[Screens.Screen.TOP] ?: return null
+        val bottom = lastSeenHashes[Screens.Screen.BOTTOM] ?: return null
+        return screenState.identity(top, bottom)
     }
 
     override fun toggle() = if (state.value.playing) pause() else play()
