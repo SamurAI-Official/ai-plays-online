@@ -38,6 +38,49 @@ object Screens {
     fun hashOf(frame: Frame, screen: Screen): Long = FrameHash.dHash(frame, regionOf(frame, screen))
 
     /**
+     * A coarse tone of [screen] in [frame]: its region downsampled to [TONE_CELLS] x [TONE_CELLS] cells, each cell's
+     * average luminance quantized to [TONE_LEVELS] levels.
+     *
+     * [hashOf] says nothing about a *uniform* picture: a black screen, a white one and a solid-coloured menu
+     * background all hash to zero, so a game's boot, loading and title screens would share one identity. This tells
+     * them apart — and, being coarse, it survives a blinking cursor or an animation exactly as the hash does.
+     */
+    fun toneOf(frame: Frame, screen: Screen): Long {
+        val (x, y, width, height) = regionOf(frame, screen)
+        var tone = 0L
+        var cell = 0
+        for (row in 0 until TONE_CELLS) {
+            for (column in 0 until TONE_CELLS) {
+                val left = x + width * column / TONE_CELLS
+                val right = maxOf(left + 1, x + width * (column + 1) / TONE_CELLS)
+                val top = y + height * row / TONE_CELLS
+                val bottom = maxOf(top + 1, y + height * (row + 1) / TONE_CELLS)
+                var sum = 0L
+                var count = 0
+                for (py in top until bottom) {
+                    for (px in left until right) {
+                        val pixel = frame.pixels[py * frame.width + px]
+                        // Rec. 601 luma: what "how bright is this cell" means to a person looking at the screen.
+                        val luma = (299 * ((pixel shr 16) and 0xFF) + 587 * ((pixel shr 8) and 0xFF) + 114 * (pixel and 0xFF)) / 1000
+                        sum += luma
+                        count++
+                    }
+                }
+                val level = if (count == 0) 0 else ((sum / count) * TONE_LEVELS / 256).toInt()
+                tone = tone or (level.coerceIn(0, TONE_LEVELS - 1).toLong() shl (cell * 4))
+                cell++
+            }
+        }
+        return tone
+    }
+
+    /** Cells per side of the tone grid: coarse enough to ignore detail, fine enough to tell a menu from a map. */
+    const val TONE_CELLS = 4
+
+    /** Levels per cell, 4 bits: a screen's tone is 4x4 cells of 4 bits, so it fits in a `Long` like the hash does. */
+    const val TONE_LEVELS = 16
+
+    /**
      * The pictures to attach to a request: each screen on its own, labelled, so a vision model sees both at full
      * size (one combined picture would give each of them half the pixels, which is what small dialogue text suffers
      * from). A frame that is not two screens is sent as one picture.

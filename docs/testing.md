@@ -98,6 +98,19 @@ cp -R ~/.ai-plays-online /tmp/ai-plays-data-copy    # cores/, saves/, states/: o
   -PdevArgs="/path/game.nds|1200|desmume|1|--out=/tmp/state1"
 ```
 
+To see what a **screen-only** game tells the model — the path a ROM with no calibrated reader takes, where the picture
+names the screens — replay a state taken where it misbehaves with `dev/ReaderPlayProbe`, which prints the `memory` and
+`affordances` blocks the model is given, and the map it has built:
+
+```bash
+# take a state where the agent was stuck (SaveStateProbe, or F1 in the app), then:
+./gradlew devRun -PdevMain=me.nathanfallet.aiplayspokemon.dev.ReaderPlayProbeKt \
+  -PdevArgs="/path/game.nds|12|desmume|--state=/tmp/stuck.state7|--memory"
+```
+
+`affordances: N known transitions over M screens` is the line that says whether the player is learning: it stays at
+`0 known transitions` when the screens cannot be told apart, which is the shape of a loop.
+
 `RomNarrationCheckTest` is different: it boots the ROM and presses A until the game is on the **field**, so its data
 directory needs a HeartGold with a **real in-game save**. A fresh game never gets there — it stops at the name entry.
 `SongChangePauseCheckTest` needs a state taken *while the song changes* (walking from Viridian City onto Route 22 is the

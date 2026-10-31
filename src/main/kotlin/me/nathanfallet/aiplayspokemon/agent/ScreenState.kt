@@ -91,8 +91,28 @@ class ScreenState {
     private val readHashes = mutableMapOf<Screens.Screen, Long>()
     private val readKinds = mutableMapOf<Screens.Screen, String>()
 
-    /** The pictures this session has named, and the hashes each name was given to (see [identity]). */
-    private val identities = mutableMapOf<String, Pair<Long, Long>>()
+    /**
+     * One screen's picture, as [identity] compares it: its shape ([Screens.hashOf]) and its coarse tone
+     * ([Screens.toneOf]). Both are needed — the shape cannot tell two *uniform* pictures apart (a black screen, a white
+     * one and a solid menu background all hash to zero), and the tone alone would call two different menus one screen.
+     */
+    data class Signature(val hash: Long, val tone: Long) {
+        /**
+         * The same picture: the shape within [SAME_PICTURE_BITS], the tone within [SAME_TONE_BITS]. Both, because the
+         * shape is blind to uniform pictures and the tone is blind to detail — and because an action that turns a black
+         * screen white *did* change the screen, which the shape alone would deny.
+         */
+        fun sameAs(other: Signature): Boolean =
+            FrameHash.distance(hash, other.hash) <= SAME_PICTURE_BITS &&
+                FrameHash.distance(tone, other.tone) <= SAME_TONE_BITS
+    }
+
+    /** The pictures this session has named, and the signatures each name was given to (see [identity]). */
+    private val identities = mutableMapOf<String, Pair<Signature, Signature>>()
+
+    /** The signature of [screen] in [frame]: what the player keeps of the frames it watched while acting. */
+    fun signatureOf(frame: Frame, screen: Screens.Screen): Signature =
+        Signature(Screens.hashOf(frame, screen), Screens.toneOf(frame, screen))
 
     /** Forgets everything: a new game, or a chapter changed by hand. */
     fun reset() {
@@ -112,19 +132,17 @@ class ScreenState {
      */
     fun identity(frame: Frame?): String {
         if (frame == null) return UNKNOWN
-        return identity(Screens.hashOf(frame, Screens.Screen.TOP), Screens.hashOf(frame, Screens.Screen.BOTTOM))
+        return identity(signatureOf(frame, Screens.Screen.TOP), signatureOf(frame, Screens.Screen.BOTTOM))
     }
 
     /**
-     * [identity] of a picture the caller has already hashed — what the player uses, since the hashes it saw *while the
+     * [identity] of a picture the caller has already signed — what the player uses, since the frames it saw *while the
      * action ran* are the authoritative ones (the frame published for the UI is not always the frame the game is on).
      */
-    fun identity(top: Long, bottom: Long): String {
-        identities.entries.firstOrNull { (_, seen) ->
-            FrameHash.distance(seen.first, top) <= SAME_PICTURE_BITS &&
-                FrameHash.distance(seen.second, bottom) <= SAME_PICTURE_BITS
-        }?.let { named -> return named.key }
-        val name = "picture:%016x:%016x".format(top, bottom)
+    fun identity(top: Signature, bottom: Signature): String {
+        identities.entries.firstOrNull { (_, seen) -> seen.first.sameAs(top) && seen.second.sameAs(bottom) }
+            ?.let { named -> return named.key }
+        val name = "picture:%016x:%016x:%016x:%016x".format(top.hash, top.tone, bottom.hash, bottom.tone)
         identities[name] = top to bottom
         return name
     }
@@ -226,6 +244,12 @@ class ScreenState {
          * landmark matcher and the player's stability check use, so a blinking cursor is not a different screen.
          */
         const val SAME_PICTURE_BITS = 6
+
+        /**
+         * How many bits two tones may differ by and still be the same screen: one bit is one cell one level off, which
+         * is what an animation or a blinking cursor does to a cell's average brightness.
+         */
+        const val SAME_TONE_BITS = 2
 
         /** The kinds of screen a DS game shows, in the words the agent needs to act on them. */
         val SCREENS = mapOf(

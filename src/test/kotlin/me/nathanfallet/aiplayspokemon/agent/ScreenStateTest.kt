@@ -233,6 +233,30 @@ class ScreenStateTest {
         return Frame(frame.width, frame.height, pixels)
     }
 
+    /**
+     * The other half of the picture identity: a dHash says nothing about a *uniform* picture, so a black screen, a
+     * white one and a solid-coloured menu background all hash to zero and would share one identity — the same collapse
+     * this exists to prevent, one layer down. The tone tells them apart.
+     */
+    @Test
+    fun twoUniformScreensAreStillTwoScreens() {
+        val state = ScreenState()
+        val black = uniform(0x000000)
+        val white = uniform(0xFFFFFF)
+        val green = uniform(0x1E7A1E)
+
+        assertEquals(
+            Screens.hashOf(black, Screens.Screen.TOP),
+            Screens.hashOf(white, Screens.Screen.TOP),
+            "flat pictures hash alike, which is why the tone is needed",
+        )
+        val names = listOf(black, white, green).map { state.identity(it) }.distinct()
+        assertEquals(3, names.size, "three solid screens must be three identities: $names")
+    }
+
+    /** A frame whose two screens are both the solid colour [rgb]. */
+    private fun uniform(rgb: Int): Frame = Frame(256, 384, IntArray(256 * 384) { (0xFF shl 24) or rgb })
+
     private companion object {
         /** Flat picture: its hash is all zeros. */
         const val FLAT = 0

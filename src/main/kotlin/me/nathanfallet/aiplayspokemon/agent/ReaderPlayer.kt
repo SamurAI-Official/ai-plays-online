@@ -62,7 +62,7 @@ class ReaderPlayer(
     private val screenState = ScreenState()
 
     /** The hash of each screen as the previous action left it: what this action's change is measured against. */
-    private val lastSeenHashes = mutableMapOf<Screens.Screen, Long>()
+    private val lastSeen = mutableMapOf<Screens.Screen, ScreenState.Signature>()
 
     private val _state = MutableStateFlow(PlayerState(note = memory.note))
     override val state: StateFlow<PlayerState> = _state.asStateFlow()
@@ -286,8 +286,8 @@ class ReaderPlayer(
      */
     private suspend fun perform(option: String): Pair<Map<Screens.Screen, ActionReport>, String?> {
         val plan = ReaderActions.plan(option) ?: return emptyMap<Screens.Screen, ActionReport>() to "unknown action '$option'"
-        val startHashes = lastSeenHashes.toMap()
-        val previous = mutableMapOf<Screens.Screen, Long>()
+        val startSignatures = lastSeen.toMap()
+        val previous = mutableMapOf<Screens.Screen, ScreenState.Signature>()
         val stableRun = mutableMapOf<Screens.Screen, Int>()
         val changed = mutableMapOf<Screens.Screen, Boolean>()
         val failure = try {
@@ -296,23 +296,23 @@ class ReaderPlayer(
                 // "how long has each been still?" are measured, not guessed.
                 repeat(plan.heldFrames) {
                     step(1, plan.input())
-                    observeFrame { frame -> for (screen in Screens.Screen.entries) previous[screen] = Screens.hashOf(frame, screen) }
+                    observeFrame { frame -> for (screen in Screens.Screen.entries) previous[screen] = screenState.signatureOf(frame, screen) }
                 }
                 repeat(plan.settleFrames) {
                     step(1)
                     observeFrame { frame ->
                         for (screen in Screens.Screen.entries) {
-                            val hash = Screens.hashOf(frame, screen)
+                            val signature = screenState.signatureOf(frame, screen)
                             val before = previous[screen]
-                            if (before != null && FrameHash.distance(hash, before) <= STABLE_BITS) {
+                            if (before != null && signature.sameAs(before)) {
                                 stableRun[screen] = (stableRun[screen] ?: 0) + 1
                             } else {
                                 stableRun[screen] = 0
                             }
-                            startHashes[screen]?.let { start ->
-                                if (FrameHash.distance(hash, start) > STABLE_BITS) changed[screen] = true
+                            startSignatures[screen]?.let { start ->
+                                if (!signature.sameAs(start)) changed[screen] = true
                             }
-                            previous[screen] = hash
+                            previous[screen] = signature
                         }
                     }
                 }
@@ -323,7 +323,7 @@ class ReaderPlayer(
             pause()
             "interrupted by the human"
         }
-        previous.forEach { (screen, hash) -> lastSeenHashes[screen] = hash }
+        previous.forEach { (screen, signature) -> lastSeen[screen] = signature }
         val reports = Screens.Screen.entries.associateWith { screen ->
             ActionReport(changed = changed[screen] == true, stableFrames = stableRun[screen] ?: 0)
         }
@@ -342,8 +342,8 @@ class ReaderPlayer(
      * keyed by this.
      */
     private fun pictureIdentity(): String? {
-        val top = lastSeenHashes[Screens.Screen.TOP] ?: return null
-        val bottom = lastSeenHashes[Screens.Screen.BOTTOM] ?: return null
+        val top = lastSeen[Screens.Screen.TOP] ?: return null
+        val bottom = lastSeen[Screens.Screen.BOTTOM] ?: return null
         return screenState.identity(top, bottom)
     }
 

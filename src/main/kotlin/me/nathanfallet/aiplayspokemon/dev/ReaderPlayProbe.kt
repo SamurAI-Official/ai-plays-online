@@ -29,6 +29,7 @@ import me.nathanfallet.aiplayspokemon.games.ReaderSpec
 import me.nathanfallet.aiplayspokemon.sha256OfRom
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 
 /**
  * Plays a game with the reader player, headlessly, with a **scripted** model: the point is to prove the loop
@@ -74,6 +75,15 @@ fun main(args: Array<String>) = runBlocking {
         config.dataDirectory,
     )
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // --state=<file>: start from a savestate instead of the game's own boot, which is how a run that loops is replayed
+    // (take the state where the agent was stuck: `dev/SaveStateProbe`, or F1 in the app). The state is loaded into the
+    // slot the host reads, so the console's own load path is what loads it.
+    val state = args.firstOrNull { it.startsWith("--state=") }?.substringAfter("--state=")?.let(Path::of)
+    val stateSlot = 7
+    if (state != null) {
+        Files.createDirectories(config.dataDirectory.resolve("states"))
+        Files.copy(state, config.dataDirectory.resolve("states").resolve("${rom.fileName}.state$stateSlot"), StandardCopyOption.REPLACE_EXISTING)
+    }
     // --memory: pick up what a previous run learned about this game, and write down what this one learns.
     val useMemory = args.any { it == "--memory" }
     // --goal=<screen>: ask the map for a way to this screen instead of the one the reader's own signals aim at. It is
@@ -115,6 +125,11 @@ fun main(args: Array<String>) = runBlocking {
     )
     println("== reader play probe: ${profile.title}, $decisions decisions on $core ==")
     println("reader: ${reader.observations.size} values, ${reader.progress.size} signals (${reader.provenance})")
+    state?.let { file ->
+        // Before start(), as the app does with its own START_STATE: the console is up, the game has not run yet.
+        check(runBlocking { emulator.loadState(stateSlot) }) { "could not load the state $file" }
+        println("state: started from $file (slot $stateSlot)")
+    }
     emulator.start()
     player.play()
     var lastSeen = 0
