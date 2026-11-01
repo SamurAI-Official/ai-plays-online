@@ -57,6 +57,7 @@ gets past its intro"):
 | `RapidPausesCheckTest` | `PAUSE_MUSIC_DATA`, `PAUSE_MUSIC_ROM`, `PAUSE_MUSIC_RAPID_STATE` | pausing and resuming again and again stays in tune |
 | `SongChangePauseCheckTest` | `PAUSE_MUSIC_DATA`, `PAUSE_MUSIC_ROM`, `PAUSE_MUSIC_SONG_CHANGE_STATE` (+ `PAUSE_MUSIC_SONG_CHANGE_WAIT=off`) | a pause asked *while the game changes its song*: with the setting on it starts on the new song; off, the resume is refused and the music jumps back |
 | `RomNarrationCheckTest` | `NARRATION_ROM`, `NARRATION_DATA` (+ `NARRATION_OUT`) | a decision built on the real game is really said by the voice, and the audio is written to a file |
+| `ScreenOnlyLearningTest` | `SCREEN_ONLY_ROM`, `SCREEN_ONLY_DATA`, `SCREEN_ONLY_STATE` | a game whose reader reads **nothing** (Phantasy Star 0, Final Fantasy, any ROM with no calibrated reader) builds a map of its screens instead of treating the whole game as one screen: the regression test for the loop where the agent opened the same menu forever |
 
 ```bash
 # two peers over UDP, through ConsoleHost and through NetplayDriver
@@ -75,6 +76,10 @@ PAUSE_MUSIC_DATA="$HOME/.ai-plays-online-copy" PAUSE_MUSIC_ROM="/path/HeartGold.
 # a decision narrated for real
 NARRATION_ROM="/path/HeartGold.nds" NARRATION_DATA="$HOME/.ai-plays-online-copy" \
   NARRATION_OUT=/tmp/wav ./gradlew test --tests '*RomNarrationCheckTest*'
+
+# a screen-only game builds a map of its screens (take the state where the agent was stuck)
+SCREEN_ONLY_ROM="/path/game.nds" SCREEN_ONLY_DATA="$HOME/.ai-plays-online-copy" \
+  SCREEN_ONLY_STATE=/tmp/stuck.state7 ./gradlew test --tests '*ScreenOnlyLearningTest*'
 ```
 
 ### Point `*_DATA` at a copy, never at the app's own directory
