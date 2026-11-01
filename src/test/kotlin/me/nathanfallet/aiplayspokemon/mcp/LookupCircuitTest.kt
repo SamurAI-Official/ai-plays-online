@@ -63,19 +63,23 @@ class LookupCircuitTest {
     }
 
     /**
-     * An MCP server with the server's circuit (client timeout 300 ms, no client times out before 100 ms): `act` under
-     * the call lock ([ToolCalls.locked] then [ToolCalls.run]), its first call lasting [firstActMillis] (the game moving
-     * to its end: a long go_to), the next ones 50 ms; each shows a message and then a frame of its number's width, and
-     * answers whether its messages were repeated and whether earlier outcomes came back (`previous_calls`). `lookup`
-     * and `screenshot` through the server's own tool functions.
+     * An MCP server with the server's circuit (client timeout [clientTimeoutMillis], no client times out before 100 ms):
+     * `act` under the call lock ([ToolCalls.locked] then [ToolCalls.run]), its first call lasting [firstActMillis] (the
+     * game moving to its end: a long go_to), the next ones 50 ms; each shows a message and then a frame of its number's
+     * width, and answers whether its messages were repeated and whether earlier outcomes came back (`previous_calls`).
+     * `lookup` and `screenshot` through the server's own tool functions.
+     *
+     * The client timeout has to be chosen against the act it wraps: an answer arriving more than that after its last
+     * sign of life is *lost* by the circuit's own rule, so a test whose act can outlast its client timeout is testing
+     * the lost path, whatever it meant to test. Production is 60 s against acts of seconds to a minute.
      */
-    private fun server(game: Game, firstActMillis: Long): McpTestServer {
+    private fun server(game: Game, firstActMillis: Long, clientTimeoutMillis: Long = 300): McpTestServer {
         val clock = ProgressClock()
         val tracker = DeliveryTracker(
             confirm = { game.feed.confirm(); game.unanswered.delivered(); game.confirmed++ },
             uncertain = game.feed::confirm,
             onVerdict = { game.verdicts += it },
-            clientTimeoutMillis = 300, minClientTimeoutMillis = 100,
+            clientTimeoutMillis = clientTimeoutMillis, minClientTimeoutMillis = 100,
         )
         val calls = ToolCalls(clock, tracker, period = 100.milliseconds)
         val lock = Mutex()
@@ -149,7 +153,11 @@ class LookupCircuitTest {
     @Test
     fun readsAroundADeliveredActDoNotMakeItRepeated() {
         val game = Game()
-        server(game, firstActMillis = 200).use { mcp ->
+        // Its client *waits* for the act, so the harness's client timeout must be comfortably longer than the act: at
+        // 300 ms against a 200 ms act, a loaded runner pushed the act past the timeout and the circuit — correctly —
+        // judged the answer lost, so the next act repeated it and this test failed on macOS CI. Production is 60 s
+        // against acts of seconds to a minute: the same ratio.
+        server(game, firstActMillis = 200, clientTimeoutMillis = 5_000).use { mcp ->
             val first = mcp.callAsync(2, "act")
             Thread.sleep(50)
             val (lookup, screenshot) = reads(mcp, 3)
